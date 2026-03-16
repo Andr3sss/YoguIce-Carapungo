@@ -1,0 +1,1111 @@
+import { db as firestore } from './firebase.js';
+import { 
+  collection, doc, onSnapshot, setDoc, addDoc, updateDoc, 
+  query, where, orderBy, serverTimestamp, getDocs, limit, deleteDoc
+} from "firebase/firestore";
+
+const DB_KEYS = {
+  PRODUCTOS: 'heladeria_productos',
+  VENTAS: 'heladeria_ventas',
+  CIERRES: 'heladeria_cierres',
+  CUENTAS: 'heladeria_cuentas',
+  APERTURAS: 'heladeria_aperturas',
+  INSUMOS: 'heladeria_insumos',
+  COCINA: 'heladeria_cocina',
+  GASTOS: 'heladeria_gastos',
+};
+
+const DB_VERSION = 1;
+
+// Initialize WebSockets for Local Network Sync (KDS)
+let socket = null;
+try {
+  socket = io();
+  socket.on('connect', () => {
+    console.log('✅ Conectado al servidor KDS via WebSockets');
+  });
+
+  socket.on('sync-kds', (data) => {
+    const pedidos = getCollection(DB_KEYS.COCINA);
+    
+    if (data.action === 'added') {
+      const exists = pedidos.find(p => p.id === data.payload.id);
+      if (!exists) {
+        pedidos.push(data.payload);
+        saveCollection(DB_KEYS.COCINA, pedidos);
+        emit('cocina-added', data.payload);
+      }
+    } else if (data.action === 'updated') {
+      const index = pedidos.findIndex(p => p.id === data.payload.id);
+      if (index !== -1) {
+        pedidos[index].estado = data.payload.estado;
+        saveCollection(DB_KEYS.COCINA, pedidos);
+        emit('cocina-updated', pedidos[index]);
+      } else {
+        // En caso super extremo de que falte, se inserta
+        pedidos.push(data.payload);
+        saveCollection(DB_KEYS.COCINA, pedidos);
+        emit('cocina-added', data.payload);
+      }
+    }
+  });
+
+} catch(e) {
+  console.warn('Socket.IO no está disponible temporalmente', e);
+}
+
+export const SABORES_HELADO = [
+  'Chocolate', 'Vainilla', 'Fresa', 'Mora', 'Maracuyá', 'Chicle'
+];
+
+export const COBERTURAS_LIQUIDAS = [
+  'Chocolate', 'Manjar', 'Chicle', 'Mora', 'Fresa', 'Maracuyá'
+];
+
+export const TOPPINGS = [
+  'Oreo', 'Chips Ahoy', 'Barquillo', 'Barriletes', 'Trululú', 'M&M',
+  'Gusanitos', 'Grageas', 'Chocolate blanco', 'Chocolate negro',
+  'Chocolate colores', 'Almendra', 'Nuez', 'Maní', 'Granola',
+  'Pasas', 'Fresas', 'Mora', 'Piña'
+];
+
+export const EXTRAS = [
+  { nombre: 'Topping extra', precio: 0.20 },
+  { nombre: 'Jalea extra', precio: 0.20 },
+  { nombre: 'Queso extra', precio: 0.60 },
+  { nombre: 'Crema extra', precio: 0.60 }
+];
+
+export const NOTAS_RAPIDAS = [
+  'Sin fruta', 'Sin crema', 'Sin cobertura', 'Extra topping', 'Extra frío'
+];
+
+// Menú Oficial Heladería
+const DEFAULT_PRODUCTS = [
+  // WAFFLES
+  { id: 1, nombre: 'Waffle Tradicional', precio: 5.00, categoria: 'WAFFLES', activo: true, emoji: '🧇', 
+    opciones: { sabores: {min: 2, max: 2}, coberturas: {min: 1, max: 1}, toppings: {min: 0, max: 0}, incluye_desc: '2 sabores helado, fruta, crema, 1 cobertura' }},
+  { id: 2, nombre: 'Waffle Durazno', precio: 5.00, categoria: 'WAFFLES', activo: true, emoji: '🧇', 
+    opciones: { sabores: {min: 1, max: 1}, coberturas: {min: 0, max: 0}, toppings: {min: 0, max: 0}, incluye_desc: '1 sabor, fresa, durazno, crema' }},
+  { id: 3, nombre: 'Waffle con Queso', precio: 5.00, categoria: 'WAFFLES', activo: true, emoji: '🧇', 
+    opciones: { sabores: {min: 1, max: 1}, coberturas: {min: 1, max: 1}, toppings: {min: 0, max: 0}, incluye_desc: '1 sabor, fruta, crema, queso, 1 cobertura' }},
+  { id: 4, nombre: 'Waffle con Frutas', precio: 4.00, categoria: 'WAFFLES', activo: true, emoji: '🧇', 
+    opciones: { sabores: {min: 0, max: 0}, coberturas: {min: 0, max: 0}, toppings: {min: 0, max: 0}, incluye_desc: 'Frutas de temporada' }},
+  { id: 5, nombre: 'Bubble Waffle', precio: 3.50, categoria: 'WAFFLES', activo: true, emoji: '🧇', 
+    opciones: { sabores: {min: 1, max: 1}, coberturas: {min: 1, max: 1}, toppings: {min: 0, max: 0}, incluye_desc: '1 sabor, fresa, crema, 1 cobertura' }},
+  { id: 6, nombre: 'Bubble Waffle Oreo', precio: 3.50, categoria: 'WAFFLES', activo: true, emoji: '🧇', 
+    opciones: { sabores: {min: 1, max: 1}, coberturas: {min: 0, max: 0}, toppings: {min: 0, max: 0}, incluye_desc: '1 sabor, fresa, crema, oreo' }},
+  { id: 7, nombre: 'Bubble Waffle Queso', precio: 3.50, categoria: 'WAFFLES', activo: true, emoji: '🧇', 
+    opciones: { sabores: {min: 1, max: 1}, coberturas: {min: 1, max: 1}, toppings: {min: 0, max: 0}, incluye_desc: '1 sabor, queso, crema, 1 cobertura' }},
+
+  // TULIPANES
+  { id: 8, nombre: 'Tulipán Doble', precio: 2.00, categoria: 'TULIPANES', activo: true, emoji: '🍧', 
+    opciones: { sabores: {min: 2, max: 2}, coberturas: {min: 1, max: 1}, toppings: {min: 2, max: 2}, incluye_desc: '2 sabores, 1 cobertura, 2 toppings' }},
+  { id: 9, nombre: 'Tulipán Triple', precio: 3.00, categoria: 'TULIPANES', activo: true, emoji: '🍧', 
+    opciones: { sabores: {min: 3, max: 3}, coberturas: {min: 1, max: 1}, toppings: {min: 2, max: 2}, incluye_desc: '3 sabores, 1 cobertura, 2 toppings' }},
+  { id: 10, nombre: 'Tulipán Queso', precio: 2.80, categoria: 'TULIPANES', activo: true, emoji: '🧀', 
+    opciones: { sabores: {min: 2, max: 2}, coberturas: {min: 1, max: 1}, toppings: {min: 0, max: 0}, incluye_desc: '2 sabores, crema, queso, 1 cobertura' }},
+
+  // COPAS
+  { id: 11, nombre: 'Copa Doble', precio: 2.00, categoria: 'COPAS', activo: true, emoji: '🍨', 
+    opciones: { sabores: {min: 2, max: 2}, coberturas: {min: 1, max: 1}, toppings: {min: 2, max: 2}, incluye_desc: '2 sabores, 2 toppings, 1 cobertura' }},
+  { id: 12, nombre: 'Copa Triple', precio: 3.00, categoria: 'COPAS', activo: true, emoji: '🍨', 
+    opciones: { sabores: {min: 3, max: 3}, coberturas: {min: 1, max: 1}, toppings: {min: 2, max: 2}, incluye_desc: '3 sabores, 2 toppings, 1 cobertura' }},
+  { id: 13, nombre: 'Copa Queso', precio: 3.00, categoria: 'COPAS', activo: true, emoji: '🧀', 
+    opciones: { sabores: {min: 2, max: 2}, coberturas: {min: 1, max: 1}, toppings: {min: 0, max: 0}, incluye_desc: '2 sabores, fresa, banana, crema, queso, 1 cobertura' }},
+  { id: 14, nombre: 'Copa Durazno con Queso', precio: 2.60, categoria: 'COPAS', activo: true, emoji: '🧀', 
+    opciones: { sabores: {min: 1, max: 1}, coberturas: {min: 1, max: 1}, toppings: {min: 0, max: 0}, incluye_desc: '1 sabor, crema, queso, 1 cobertura' }},
+  { id: 15, nombre: 'Copa Durazno sin Queso', precio: 2.25, categoria: 'COPAS', activo: true, emoji: '🍑', 
+    opciones: { sabores: {min: 1, max: 1}, coberturas: {min: 1, max: 1}, toppings: {min: 0, max: 0}, incluye_desc: '1 sabor, crema, 1 cobertura' }},
+  { id: 16, nombre: 'Banana Split', precio: 2.50, categoria: 'COPAS', activo: true, emoji: '🍌', 
+    opciones: { sabores: {min: 2, max: 2}, coberturas: {min: 1, max: 1}, toppings: {min: 2, max: 2}, incluye_desc: '2 sabores, 2 toppings, 1 cobertura' }},
+  { id: 17, nombre: 'Banana Split Triple', precio: 3.50, categoria: 'COPAS', activo: true, emoji: '🍌', 
+    opciones: { sabores: {min: 3, max: 3}, coberturas: {min: 1, max: 1}, toppings: {min: 0, max: 0}, incluye_desc: '3 sabores, crema, queso, 1 cobertura' }},
+
+  // POSTRES
+  { id: 18, nombre: 'Brownie con Helado', precio: 2.80, categoria: 'POSTRES', activo: true, emoji: '🍫', 
+    opciones: { sabores: {min: 1, max: 1}, coberturas: {min: 1, max: 1}, toppings: {min: 0, max: 0}, incluye_desc: '1 sabor helado, crema, 1 cobertura' }},
+  { id: 19, nombre: 'Postre Individual', precio: 1.50, categoria: 'POSTRES', activo: true, emoji: '🍰', 
+    variantes: [
+      {nombre: 'Brownie', precio: 1.50}, 
+      {nombre: 'Cheesecake Maracuyá', precio: 1.50}, 
+      {nombre: 'Torta Manzana', precio: 1.50}, 
+      {nombre: 'Torta Nuez', precio: 1.50}
+    ] 
+  },
+
+  // TORTAS HELADAS
+  { id: 20, nombre: 'Torta Helada Grande', precio: 20.00, categoria: 'TORTAS HELADAS', activo: true, emoji: '🎂', 
+    variantes: [
+      {nombre: 'Kinder', precio: 20}, {nombre: 'Ferrero', precio: 20}, {nombre: 'Tiramisú', precio: 20}
+    ], 
+    opciones: { personalizacion_nombre: { precio: 1.00, activa: true } } },
+  { id: 21, nombre: 'Torta Helada Junior', precio: 11.00, categoria: 'TORTAS HELADAS', activo: true, emoji: '🎂', 
+    variantes: [
+      {nombre: 'Kinder', precio: 11}, {nombre: 'Ferrero', precio: 11}
+    ],
+    opciones: { personalizacion_nombre: { precio: 1.00, activa: true } } },
+
+  // BEBIDAS
+  { id: 22, nombre: 'Monster Shake', precio: 3.50, categoria: 'BEBIDAS', activo: true, emoji: '🧋', opciones: { sabores: {min: 1, max: 1} } },
+  { id: 23, nombre: 'Milk Shake', precio: 2.25, categoria: 'BEBIDAS', activo: true, emoji: '🥤', opciones: { sabores: {min: 1, max: 1} } },
+  { id: 24, nombre: 'Nevado', precio: 3.25, categoria: 'BEBIDAS', activo: true, emoji: '❄️', opciones: { sabores: {min: 1, max: 1} } },
+  { id: 25, nombre: 'Capuchino', precio: 1.50, categoria: 'BEBIDAS', activo: true, emoji: '☕' },
+  { id: 26, nombre: 'Americano', precio: 1.25, categoria: 'BEBIDAS', activo: true, emoji: '☕' },
+  { id: 27, nombre: 'Mocaccino', precio: 1.80, categoria: 'BEBIDAS', activo: true, emoji: '☕' },
+  { id: 28, nombre: 'Choco Malvavisco', precio: 2.25, categoria: 'BEBIDAS', activo: true, emoji: '☕' },
+
+  // PROMOCIONES
+  { id: 29, nombre: 'Promo: 2 Copas Queso', precio: 5.50, categoria: 'PROMOCIONES', activo: true, emoji: '🏆', 
+    opciones: { sabores: {min: 4, max: 4}, coberturas: {min: 2, max: 2}, toppings: {min: 0, max: 0}, incluye_desc: '2 Copas completas (4 sabores total)' } },
+  { id: 30, nombre: 'Promo: 2 Waffles Trad.', precio: 7.00, categoria: 'PROMOCIONES', activo: true, emoji: '🏆', 
+    opciones: { sabores: {min: 4, max: 4}, coberturas: {min: 2, max: 2}, toppings: {min: 0, max: 0}, incluye_desc: '2 Waffles completos (4 sabores total)' } },
+  { id: 31, nombre: 'Promo: 2 Bubble Waffle', precio: 6.50, categoria: 'PROMOCIONES', activo: true, emoji: '🏆', 
+    opciones: { sabores: {min: 2, max: 2}, coberturas: {min: 2, max: 2}, toppings: {min: 0, max: 0}, incluye_desc: '2 Bubble Waffles completos' } },
+  { id: 32, nombre: 'Promo: 2 Capu + 1 Brownie', precio: 3.99, categoria: 'PROMOCIONES', activo: true, emoji: '🏆' },
+];
+
+// ========================================
+// Core helpers
+// ========================================
+
+function getCollection(key) {
+  try {
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCollection(key, data) {
+  localStorage.setItem(key, JSON.stringify(data));
+}
+
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+}
+
+// Safe rounding for monetary values (avoids floating point issues)
+export function round2(n) {
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
+
+// ========================================
+// Event bus for real-time updates
+// ========================================
+
+const listeners = {};
+
+export function on(event, callback) {
+  if (!listeners[event]) listeners[event] = [];
+  listeners[event].push(callback);
+}
+
+export function off(event, callback) {
+  if (!listeners[event]) return;
+  listeners[event] = listeners[event].filter(cb => cb !== callback);
+}
+
+function emit(event, data) {
+  if (!listeners[event]) return;
+  listeners[event].forEach(cb => cb(data));
+}
+
+// ========================================
+// 🔥 Firebase Real-time Shadowing Engine
+// ========================================
+
+const shadowStore = {
+  aperturas: [],
+  cuentas: [],
+  cocina: [],
+  ventas: [],
+  gastos: [],
+  productos: [],
+};
+
+let isSynced = false;
+
+export function startCloudSync() {
+  console.log('🔥 Iniciando Simbiosis con Firestore...');
+
+  // Sync Jornadas (Aperturas/Cierres)
+  onSnapshot(collection(firestore, 'jornadas'), (snapshot) => {
+    shadowStore.aperturas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    saveCollection(DB_KEYS.APERTURAS, shadowStore.aperturas);
+    emit('apertura-changed', getAperturaHoy());
+  });
+
+  // Sync Cuentas
+  onSnapshot(collection(firestore, 'cuentas'), (snapshot) => {
+    shadowStore.cuentas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    saveCollection(DB_KEYS.CUENTAS, shadowStore.cuentas);
+    emit('cuentas-changed', shadowStore.cuentas);
+    // Emit for individual updated accounts if needed
+    snapshot.docChanges().forEach(change => {
+      if (change.type === "modified") {
+        emit('cuenta-updated', { id: change.doc.id, ...change.doc.data() });
+      }
+    });
+  });
+
+  // Sync Cocina (KDS)
+  onSnapshot(query(collection(firestore, 'cocina_kds'), orderBy('timestamp', 'asc')), (snapshot) => {
+    shadowStore.cocina = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    saveCollection(DB_KEYS.COCINA, shadowStore.cocina);
+    emit('cocina-sync', shadowStore.cocina);
+    snapshot.docChanges().forEach(change => {
+      if (change.type === "added") emit('cocina-added', { id: change.doc.id, ...change.doc.data() });
+      if (change.type === "modified") emit('cocina-updated', { id: change.doc.id, ...change.doc.data() });
+    });
+  });
+
+  // Sync Ventas (Last 500 for performance)
+  onSnapshot(query(collection(firestore, 'ventas'), orderBy('timestamp', 'desc'), limit(500)), (snapshot) => {
+    shadowStore.ventas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    saveCollection(DB_KEYS.VENTAS, shadowStore.ventas);
+    emit('sales-changed', shadowStore.ventas);
+  });
+
+  // Sync Gastos
+  onSnapshot(collection(firestore, 'gastos'), (snapshot) => {
+    shadowStore.gastos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    saveCollection(DB_KEYS.GASTOS, shadowStore.gastos);
+    emit('gastos-changed', shadowStore.gastos);
+  });
+
+  isSynced = true;
+}
+
+// ========================================
+// Products CRUD
+// ========================================
+
+export function initProducts() {
+  const existing = getCollection(DB_KEYS.PRODUCTOS);
+  // Force load new real menu structure if the local DB has fewer than 15 items (which means it's the old one)
+  if (existing.length < 15) {
+    saveCollection(DB_KEYS.PRODUCTOS, DEFAULT_PRODUCTS);
+  }
+}
+
+export function getProducts() {
+  return getCollection(DB_KEYS.PRODUCTOS);
+}
+
+export function getActiveProducts() {
+  return getProducts().filter(p => p.activo);
+}
+
+export function getProductById(id) {
+  return getProducts().find(p => p.id === id || p.id === Number(id));
+}
+
+export function addProduct(product) {
+  const products = getProducts();
+  const newProduct = {
+    ...product,
+    id: products.length > 0 ? Math.max(...products.map(p => typeof p.id === 'number' ? p.id : 0)) + 1 : 1,
+  };
+  products.push(newProduct);
+  saveCollection(DB_KEYS.PRODUCTOS, products);
+  emit('products-changed', products);
+  return newProduct;
+}
+
+export function updateProduct(id, updates) {
+  const products = getProducts();
+  const index = products.findIndex(p => p.id === id || p.id === Number(id));
+  if (index === -1) return null;
+  products[index] = { ...products[index], ...updates };
+  saveCollection(DB_KEYS.PRODUCTOS, products);
+  emit('products-changed', products);
+  return products[index];
+}
+
+export function deleteProduct(id) {
+  let products = getProducts();
+  products = products.filter(p => p.id !== id && p.id !== Number(id));
+  saveCollection(DB_KEYS.PRODUCTOS, products);
+  emit('products-changed', products);
+}
+
+// ========================================
+// Insumos (Inventory) CRUD
+// ========================================
+
+export function getInsumos() {
+  const insumos = getCollection(DB_KEYS.INSUMOS);
+  if (insumos.length === 0) {
+    const defaultInsumos = [
+      { id: 1, nombre: 'Conos', activo: true },
+      { id: 2, nombre: 'Vasos Pequeños', activo: true },
+      { id: 3, nombre: 'Vasos Grandes', activo: true },
+      { id: 4, nombre: 'Cucharas', activo: true },
+      { id: 5, nombre: 'Tarrinas', activo: true },
+    ];
+    saveCollection(DB_KEYS.INSUMOS, defaultInsumos);
+    return defaultInsumos;
+  }
+  return insumos;
+}
+
+export function getActiveInsumos() {
+  return getInsumos().filter(i => i.activo);
+}
+
+// ========================================
+// Sales CRUD
+// ========================================
+
+export function getSales() {
+  return getCollection(DB_KEYS.VENTAS);
+}
+
+export function addSale(producto, metodoPago, cuentaId = null) {
+  const sales = getSales();
+  const now = new Date();
+  const sale = {
+    id: generateId(),
+    producto_id: producto.id,
+    producto_nombre: producto.nombre,
+    precio: producto.precio,
+    metodo_pago: metodoPago,
+    fecha: now.toISOString().split('T')[0],
+    hora: now.toTimeString().split(' ')[0],
+    usuario: 'Cajero',
+    timestamp: now.getTime(),
+    cuenta_id: cuentaId,
+  };
+  sales.push(sale);
+  saveCollection(DB_KEYS.VENTAS, sales);
+  emit('sale-added', sale);
+  emit('sales-changed', sales);
+  return sale;
+}
+
+// Batch-add sales from a closed cuenta (more efficient)
+export function addSalesFromCuenta(cuenta, metodoPago) {
+  const sales = getSales();
+  const now = new Date();
+  const newSales = [];
+  cuenta.items.forEach(item => {
+    for (let i = 0; i < item.cantidad; i++) {
+      const sale = {
+        id: generateId(),
+        producto_id: item.producto_id,
+        producto_nombre: item.nombre,
+        precio: item.precio,
+        metodo_pago: metodoPago,
+        fecha: now.toISOString().split('T')[0],
+        hora: now.toTimeString().split(' ')[0],
+        usuario: 'Cajero',
+        timestamp: now.getTime(),
+        cuenta_id: cuenta.id,
+      };
+      sales.push(sale);
+      newSales.push(sale);
+    }
+  });
+  saveCollection(DB_KEYS.VENTAS, sales);
+  newSales.forEach(s => emit('sale-added', s));
+  emit('sales-changed', sales);
+  return newSales;
+}
+
+export function getTodaySales() {
+  const today = new Date().toISOString().split('T')[0];
+  return getSales().filter(s => s.fecha === today);
+}
+
+/**
+ * Get sales only from the CURRENT jornada (after the current apertura).
+ * If no apertura is open, falls back to getTodaySales().
+ */
+export function getSalesForJornada() {
+  const apertura = getAperturaHoy();
+  if (!apertura || apertura.estado !== 'abierto') {
+    // If day is closed, show sales from the last apertura's range
+    if (apertura && apertura.estado === 'cerrado') {
+      return getSales().filter(s => s.timestamp >= apertura.timestamp_apertura && s.timestamp <= apertura.timestamp_cierre);
+    }
+    return [];
+  }
+  // Only sales made after this apertura opened
+  return getSales().filter(s => s.timestamp >= apertura.timestamp_apertura);
+}
+
+/**
+ * Get cuentas only from the CURRENT jornada.
+ */
+export function getCuentasForJornada() {
+  const apertura = getAperturaHoy();
+  if (!apertura || apertura.estado !== 'abierto') {
+    if (apertura && apertura.estado === 'cerrado') {
+      return getCuentas().filter(c => c.timestamp_apertura >= apertura.timestamp_apertura && c.timestamp_apertura <= apertura.timestamp_cierre);
+    }
+    return [];
+  }
+  return getCuentas().filter(c => c.timestamp_apertura >= apertura.timestamp_apertura);
+}
+
+export function getSalesByDate(dateStr) {
+  return getSales().filter(s => s.fecha === dateStr);
+}
+
+export function getSalesByDateRange(startDate, endDate) {
+  return getSales().filter(s => s.fecha >= startDate && s.fecha <= endDate);
+}
+
+export function deleteSale(id) {
+  let sales = getSales();
+  sales = sales.filter(s => s.id !== id);
+  saveCollection(DB_KEYS.VENTAS, sales);
+  emit('sales-changed', sales);
+}
+
+// ========================================
+// Cuentas (Tickets) CRUD
+// ========================================
+
+export function getCuentas() {
+  return getCollection(DB_KEYS.CUENTAS);
+}
+
+export function getNextCuentaNumber() {
+  const apertura = getAperturaHoy();
+  let cuentas;
+  if (apertura && apertura.estado === 'abierto') {
+    // Only count cuentas created after the current apertura
+    cuentas = getCuentas().filter(c => c.timestamp_apertura >= apertura.timestamp_apertura);
+  } else {
+    cuentas = getCuentas();
+  }
+  if (cuentas.length === 0) return 1;
+  return Math.max(...cuentas.map(c => c.numero || 0)) + 1;
+}
+
+export async function createCuenta() {
+  const cuentas = getCuentas();
+  const now = new Date();
+  const id = generateId();
+  const cuenta = {
+    id,
+    numero: getNextCuentaNumber(),
+    estado: 'abierta',
+    items: [],
+    total: 0,
+    metodo_pago: null,
+    fecha_apertura: now.toISOString().split('T')[0],
+    hora_apertura: now.toTimeString().split(' ')[0],
+    fecha_cierre: null,
+    hora_cierre: null,
+    timestamp_apertura: now.getTime(),
+    timestamp_cierre: null,
+  };
+
+  // Shadow write
+  cuentas.push(cuenta);
+  saveCollection(DB_KEYS.CUENTAS, cuentas);
+  
+  // Cloud write
+  await setDoc(doc(firestore, 'cuentas', id), cuenta);
+  
+  emit('cuenta-created', cuenta);
+  emit('cuentas-changed', cuentas);
+  return cuenta;
+}
+
+export function getCuentaById(id) {
+  return getCuentas().find(c => c.id === id);
+}
+
+export function getCuentasAbiertas() {
+  return getCuentas().filter(c => c.estado === 'abierta');
+}
+
+export async function addItemToCuenta(cuentaId, producto, config = null) {
+  const cuentas = getCuentas();
+  const cuenta = cuentas.find(c => c.id === cuentaId);
+  if (!cuenta || cuenta.estado !== 'abierta') return null;
+
+  let finalName = producto.nombre;
+  let finalPrice = producto.precio;
+  let detailsText = '';
+
+  if (config) {
+    if (config.variante) {
+      finalName = `${producto.nombre} ${config.variante.nombre}`;
+      finalPrice = config.variante.precio;
+    }
+    const details = [];
+    if (config.sabores && config.sabores.length > 0) details.push(`Sab: ${config.sabores.join(', ')}`);
+    if (config.coberturas && config.coberturas.length > 0) details.push(`Cob: ${config.coberturas.join(', ')}`);
+    if (config.toppings && config.toppings.length > 0) details.push(`Top: ${config.toppings.join(', ')}`);
+    
+    if (config.extras && config.extras.length > 0) {
+      const extraDesc = config.extras.map(e => `+${e.nombre}`).join(', ');
+      details.push(`Extras: ${extraDesc}`);
+      const extrasCosto = config.extras.reduce((sum, e) => sum + e.precio, 0);
+      finalPrice += extrasCosto;
+    }
+    
+    if (config.notas && config.notas.length > 0) details.push(`[NOTAS: ${config.notas.join(', ')}]`);
+    detailsText = details.join(' | ');
+  }
+
+  const itemConfigId = `${producto.id}_${finalName}_${detailsText}`;
+  const existingItem = cuenta.items.find(i => i.configId === itemConfigId || (!i.configId && i.producto_id === producto.id && !config));
+
+  if (existingItem) {
+    existingItem.cantidad++;
+  } else {
+    cuenta.items.push({
+      configId: itemConfigId,
+      producto_id: Math.floor(producto.id),
+      nombre: finalName,
+      precio: finalPrice,
+      emoji: producto.emoji || '🍦',
+      cantidad: 1,
+      detalles: detailsText
+    });
+  }
+
+  cuenta.total = round2(cuenta.items.reduce((sum, i) => sum + round2(i.precio * i.cantidad), 0));
+
+  // Shadow write
+  saveCollection(DB_KEYS.CUENTAS, cuentas);
+  
+  // Cloud write
+  await updateDoc(doc(firestore, 'cuentas', cuenta.id), {
+    items: cuenta.items,
+    total: cuenta.total
+  });
+
+  emit('cuenta-updated', cuenta);
+  emit('cuentas-changed', cuentas);
+  return cuenta;
+}
+
+export async function incrementItemQty(cuentaId, configIdOrProdId) {
+  const cuentas = getCuentas();
+  const cuenta = cuentas.find(c => c.id === cuentaId);
+  if (!cuenta || cuenta.estado !== 'abierta') return null;
+
+  const itemIndex = cuenta.items.findIndex(i => i.configId === configIdOrProdId || i.producto_id == configIdOrProdId);
+  if (itemIndex === -1) return null;
+
+  cuenta.items[itemIndex].cantidad++;
+  cuenta.total = round2(cuenta.items.reduce((sum, i) => sum + round2(i.precio * i.cantidad), 0));
+
+  // Shadow write
+  saveCollection(DB_KEYS.CUENTAS, cuentas);
+  
+  // Cloud write
+  await updateDoc(doc(firestore, 'cuentas', cuenta.id), {
+    items: cuenta.items,
+    total: cuenta.total
+  });
+
+  emit('cuenta-updated', cuenta);
+  emit('cuentas-changed', cuentas);
+  return cuenta;
+}
+
+export async function removeItemFromCuenta(cuentaId, configIdOrProdId) {
+  const cuentas = getCuentas();
+  const cuenta = cuentas.find(c => c.id === cuentaId);
+  if (!cuenta || cuenta.estado !== 'abierta') return null;
+
+  const itemIndex = cuenta.items.findIndex(i => i.configId === configIdOrProdId || i.producto_id === configIdOrProdId);
+  if (itemIndex === -1) return null;
+
+  if (cuenta.items[itemIndex].cantidad > 1) {
+    cuenta.items[itemIndex].cantidad--;
+  } else {
+    cuenta.items.splice(itemIndex, 1);
+  }
+
+  cuenta.total = round2(cuenta.items.reduce((sum, i) => sum + round2(i.precio * i.cantidad), 0));
+
+  // Shadow write
+  saveCollection(DB_KEYS.CUENTAS, cuentas);
+  
+  // Cloud write
+  await updateDoc(doc(firestore, 'cuentas', cuenta.id), {
+    items: cuenta.items,
+    total: cuenta.total
+  });
+
+  emit('cuenta-updated', cuenta);
+  emit('cuentas-changed', cuentas);
+  return cuenta;
+}
+
+export async function cobrarCuenta(cuentaId, metodoPago) {
+  const cuentas = getCuentas();
+  const cuenta = cuentas.find(c => c.id === cuentaId);
+  if (!cuenta || cuenta.estado !== 'abierta') return null;
+  if (cuenta.items.length === 0) return null;
+
+  const now = new Date();
+  cuenta.estado = 'cerrada';
+  cuenta.metodo_pago = metodoPago;
+  cuenta.fecha_cierre = now.toISOString().split('T')[0];
+  cuenta.hora_cierre = now.toTimeString().split(' ')[0];
+  cuenta.timestamp_cierre = now.getTime();
+
+  // Shadow write
+  saveCollection(DB_KEYS.CUENTAS, cuentas);
+
+  // Cloud write
+  await updateDoc(doc(firestore, 'cuentas', cuenta.id), cuenta);
+
+  // Generate sales in Cloud
+  const newSales = [];
+  cuenta.items.forEach(item => {
+    for (let i = 0; i < item.cantidad; i++) {
+      const id = generateId();
+      const sale = {
+        id,
+        producto_id: item.producto_id,
+        producto_nombre: item.nombre,
+        precio: item.precio,
+        metodo_pago: metodoPago,
+        fecha: cuenta.fecha_cierre,
+        hora: cuenta.hora_cierre,
+        usuario: 'Cajero',
+        timestamp: now.getTime(),
+        cuenta_id: cuenta.id,
+      };
+      newSales.push(sale);
+      setDoc(doc(firestore, 'ventas', id), sale); // Fire and forget sales
+    }
+  });
+
+  emit('cuenta-cerrada', cuenta);
+  emit('cuentas-changed', cuentas);
+  return cuenta;
+}
+
+export async function cancelarCuenta(cuentaId) {
+  const cuentas = getCuentas();
+  const cuenta = cuentas.find(c => c.id === cuentaId);
+  if (!cuenta || cuenta.estado !== 'abierta') return null;
+
+  const now = new Date();
+  cuenta.estado = 'cancelada';
+  cuenta.fecha_cierre = now.toISOString().split('T')[0];
+  cuenta.hora_cierre = now.toTimeString().split(' ')[0];
+  cuenta.timestamp_cierre = now.getTime();
+
+  // Shadow write
+  saveCollection(DB_KEYS.CUENTAS, cuentas);
+  
+  // Cloud write
+  await updateDoc(doc(firestore, 'cuentas', cuenta.id), cuenta);
+
+  emit('cuenta-cancelada', cuenta);
+  emit('cuentas-changed', cuentas);
+  return cuenta;
+}
+
+export function getTodayCuentas() {
+  const today = new Date().toISOString().split('T')[0];
+  return getCuentas().filter(c => c.fecha_apertura === today);
+}
+
+export function getCuentasCerradasHoy() {
+  const today = new Date().toISOString().split('T')[0];
+  return getCuentas().filter(c => c.estado === 'cerrada' && c.fecha_cierre === today);
+}
+
+export function calcCuentasSummary(cuentas) {
+  const cerradas = cuentas.filter(c => c.estado === 'cerrada');
+  const canceladas = cuentas.filter(c => c.estado === 'cancelada');
+  const totalIngresos = round2(cerradas.reduce((sum, c) => sum + c.total, 0));
+  return {
+    total_cuentas: cuentas.length,
+    cerradas: cerradas.length,
+    canceladas: canceladas.length,
+    abiertas: cuentas.filter(c => c.estado === 'abierta').length,
+    total_ingresos: totalIngresos,
+    promedio_por_cliente: cerradas.length > 0 ? round2(totalIngresos / cerradas.length) : 0,
+  };
+}
+
+// ========================================
+// Cash Closings CRUD
+// ========================================
+
+export function getCierres() {
+  return getCollection(DB_KEYS.CIERRES);
+}
+
+export function addCierre(cierre) {
+  const cierres = getCierres();
+  const newCierre = {
+    ...cierre,
+    id: generateId(),
+    timestamp: Date.now(),
+  };
+  cierres.push(newCierre);
+  saveCollection(DB_KEYS.CIERRES, cierres);
+  emit('cierres-changed', cierres);
+  return newCierre;
+}
+
+export function getCierreByDate(dateStr) {
+  return getCierres().find(c => c.fecha === dateStr);
+}
+
+// ========================================
+// Aggregation helpers
+// ========================================
+
+export function calcTotalsByMethod(sales) {
+  const totals = { efectivo: 0, tarjeta: 0, transferencia: 0 };
+  sales.forEach(s => {
+    if (totals[s.metodo_pago] !== undefined) {
+      totals[s.metodo_pago] = round2(totals[s.metodo_pago] + s.precio);
+    }
+  });
+  return totals;
+}
+
+export function calcDaySummary(sales) {
+  const totals = calcTotalsByMethod(sales);
+  const total = round2(sales.reduce((sum, s) => sum + s.precio, 0));
+  return {
+    ...totals,
+    total,
+    count: sales.length,
+    average: sales.length > 0 ? round2(total / sales.length) : 0,
+  };
+}
+
+// ========================================
+// Statistics helpers
+// ========================================
+
+export function getTopProducts(sales, limit = 5) {
+  const counts = {};
+  sales.forEach(s => {
+    if (!counts[s.producto_nombre]) {
+      counts[s.producto_nombre] = { nombre: s.producto_nombre, cantidad: 0, total: 0 };
+    }
+    counts[s.producto_nombre].cantidad++;
+    counts[s.producto_nombre].total += s.precio;
+  });
+  return Object.values(counts)
+    .sort((a, b) => b.cantidad - a.cantidad)
+    .slice(0, limit);
+}
+
+export function getSalesByHour(sales) {
+  const hours = {};
+  for (let i = 0; i < 24; i++) hours[i] = 0;
+  sales.forEach(s => {
+    const hour = parseInt(s.hora.split(':')[0]);
+    hours[hour] += s.precio;
+  });
+  return hours;
+}
+
+export function getDailyTotals(sales, days = 7) {
+  const result = [];
+  const today = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+    const daySales = sales.filter(s => s.fecha === dateStr);
+    const total = daySales.reduce((sum, s) => sum + s.precio, 0);
+    result.push({
+      fecha: dateStr,
+      label: date.toLocaleDateString('es', { weekday: 'short', day: 'numeric' }),
+      total,
+      count: daySales.length,
+    });
+  }
+  return result;
+}
+
+export function getMonthlyTotals(sales) {
+  const months = {};
+  sales.forEach(s => {
+    const month = s.fecha.substring(0, 7); // YYYY-MM
+    if (!months[month]) months[month] = { total: 0, count: 0 };
+    months[month].total += s.precio;
+    months[month].count++;
+  });
+  return Object.entries(months)
+    .map(([month, data]) => ({
+      month,
+      label: new Date(month + '-01').toLocaleDateString('es', { month: 'short', year: 'numeric' }),
+      ...data,
+    }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+}
+
+// ========================================
+// Init
+// ========================================
+
+export function initDB() {
+  initProducts();
+  startCloudSync();
+}
+
+// ========================================
+// Apertura / Cierre del Día
+// ========================================
+
+function getAperturas() {
+  return getCollection(DB_KEYS.APERTURAS);
+}
+
+function saveAperturas(data) {
+  saveCollection(DB_KEYS.APERTURAS, data);
+}
+
+export function getAperturaHoy() {
+  const today = new Date().toISOString().split('T')[0];
+  const todayAperturas = getAperturas().filter(a => a.fecha === today);
+  // Prefer the open one, otherwise return the most recent
+  return todayAperturas.find(a => a.estado === 'abierto') || todayAperturas[todayAperturas.length - 1] || null;
+}
+
+export async function abrirDia(efectivoInicial = 0, inventarioInicial = []) {
+  const aperturas = getAperturas();
+  const today = new Date().toISOString().split('T')[0];
+  const now = new Date();
+
+  if (aperturas.find(a => a.fecha === today && a.estado === 'abierto')) return null;
+
+  const id = generateId();
+  const apertura = {
+    id,
+    fecha: today,
+    hora_apertura: now.toTimeString().split(' ')[0],
+    timestamp_apertura: now.getTime(),
+    efectivo_inicial: round2(efectivoInicial),
+    inventario_inicial: inventarioInicial,
+    estado: 'abierto',
+    hora_cierre: null,
+    timestamp_cierre: null,
+    cierre: null,
+    inventario_diario: null,
+  };
+
+  // Shadow write (local)
+  aperturas.push(apertura);
+  saveAperturas(aperturas);
+  
+  // Cloud write (async)
+  await setDoc(doc(firestore, 'jornadas', id), apertura);
+  
+  emit('apertura-changed', apertura);
+  return apertura;
+}
+
+export async function cerrarDia(dataCierre, inventarioFinal = []) {
+  const aperturas = getAperturas();
+  const today = new Date().toISOString().split('T')[0];
+  const apertura = aperturas.find(a => a.fecha === today && a.estado === 'abierto');
+  if (!apertura) return null;
+
+  const now = new Date();
+  apertura.estado = 'cerrado';
+  apertura.hora_cierre = now.toTimeString().split(' ')[0];
+  apertura.timestamp_cierre = now.getTime();
+  apertura.cierre = dataCierre;
+  
+  const inventario_diario = [];
+  const inicial = apertura.inventario_inicial || [];
+  
+  inicial.forEach(item_ini => {
+    const item_fin = inventarioFinal.find(f => f.id === item_ini.id);
+    const cantidad_inicial = item_ini.cantidad || 0;
+    const cantidad_final = item_fin ? (item_fin.cantidad || 0) : 0;
+    
+    inventario_diario.push({
+      id: item_ini.id,
+      nombre: item_ini.nombre,
+      cantidad_inicial,
+      cantidad_final,
+      consumo: cantidad_inicial - cantidad_final
+    });
+  });
+  
+  apertura.inventario_diario = inventario_diario;
+
+  // Shadow write (local)
+  saveAperturas(aperturas);
+
+  // Cloud write
+  await updateDoc(doc(firestore, 'jornadas', apertura.id), apertura);
+
+  addCierre({
+    ...dataCierre,
+    fecha: today,
+    efectivo_inicial: apertura.efectivo_inicial,
+  });
+
+  emit('apertura-changed', apertura);
+  return apertura;
+}
+
+export function isDiaAbierto() {
+  const ap = getAperturaHoy();
+  return ap && ap.estado === 'abierto';
+}
+
+export function getHistorialAperturas() {
+  return getAperturas().slice().sort((a, b) => b.timestamp_apertura - a.timestamp_apertura);
+}
+
+// ========================================
+// Kitchen Display System (KDS)
+// ========================================
+
+export async function enviarACocina(cuentaId) {
+  const cuenta = getCuentaById(cuentaId);
+  if (!cuenta || cuenta.items.length === 0) return null;
+
+  const pedidos = getCollection(DB_KEYS.COCINA);
+  const id = generateId();
+  
+  const nuevoPedido = {
+    id,
+    cuentaId: cuenta.id,
+    mesaNumero: cuenta.numero,
+    timestamp: Date.now(),
+    estado: 'pendiente',
+    items: JSON.parse(JSON.stringify(cuenta.items))
+  };
+
+  // Shadow write
+  pedidos.push(nuevoPedido);
+  saveCollection(DB_KEYS.COCINA, pedidos);
+  
+  // Cloud write
+  await setDoc(doc(firestore, 'cocina_kds', id), nuevoPedido);
+  
+  localStorage.setItem('kds_ping', Date.now().toString());
+  if (socket) {
+    socket.emit('sync-kds', { action: 'added', payload: nuevoPedido });
+  }
+  
+  emit('cocina-added', nuevoPedido);
+  return nuevoPedido;
+}
+
+export function getPedidosCocina() {
+  return getCollection(DB_KEYS.COCINA);
+}
+
+export async function actualizarEstadoCocina(pedidoId, nuevoEstado) {
+  const pedidos = getCollection(DB_KEYS.COCINA);
+  const index = pedidos.findIndex(p => p.id === pedidoId);
+  
+  if (index !== -1) {
+    pedidos[index].estado = nuevoEstado;
+    saveCollection(DB_KEYS.COCINA, pedidos);
+    
+    // Cloud update
+    await updateDoc(doc(firestore, 'cocina_kds', pedidoId), { estado: nuevoEstado });
+    
+    localStorage.setItem('kds_ping', Date.now().toString());
+    if (socket) {
+      socket.emit('sync-kds', { action: 'updated', payload: pedidos[index] });
+    }
+    
+    emit('cocina-updated', pedidos[index]);
+    return pedidos[index];
+  }
+  return null;
+}
+
+// ========================================
+// 💸 Gastos CRUD (New)
+// ========================================
+
+export function getGastos() {
+  return shadowStore.gastos;
+}
+
+export async function addGasto(gasto) {
+  const id = generateId();
+  const now = new Date();
+  const nuevoGasto = {
+    id,
+    ...gasto,
+    fecha: now.toISOString().split('T')[0],
+    hora: now.toTimeString().split(' ')[0],
+    timestamp: now.getTime()
+  };
+
+  // Shadow write
+  shadowStore.gastos.push(nuevoGasto);
+  saveCollection(DB_KEYS.GASTOS, shadowStore.gastos);
+  
+  // Cloud write
+  await setDoc(doc(firestore, 'gastos', id), nuevoGasto);
+  
+  emit('gastos-changed', shadowStore.gastos);
+  return nuevoGasto;
+}
+
+// ========================================
+// Global Cloud Reporting Queries
+// ========================================
+
+/**
+ * Fetch sales from Firestore within a date range
+ * @param {string} startDate - YYYY-MM-DD
+ * @param {string} endDate - YYYY-MM-DD
+ */
+export async function getGlobalSales(startDate = null, endDate = null) {
+  const ventasRef = collection(firestore, 'ventas');
+  let q;
+  
+  if (startDate && endDate) {
+    q = query(
+      ventasRef, 
+      where('fecha', '>=', startDate), 
+      where('fecha', '<=', endDate),
+      orderBy('fecha', 'desc'),
+      orderBy('hora', 'desc')
+    );
+  } else {
+    q = query(ventasRef, orderBy('timestamp', 'desc'), limit(1000));
+  }
+  
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => doc.data());
+}
+
+/**
+ * Fetch expenses from Firestore within a date range
+ */
+export async function getGlobalGastos(startDate = null, endDate = null) {
+  const gastosRef = collection(firestore, 'gastos');
+  let q;
+  
+  if (startDate && endDate) {
+    q = query(
+      gastosRef, 
+      where('fecha', '>=', startDate), 
+      where('fecha', '<=', endDate),
+      orderBy('fecha', 'desc')
+    );
+  } else {
+    q = query(gastosRef, orderBy('timestamp', 'desc'), limit(1000));
+  }
+
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => doc.data());
+}
+
