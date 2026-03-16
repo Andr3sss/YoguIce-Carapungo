@@ -139,15 +139,15 @@ const DEFAULT_PRODUCTS = [
     variantes: [
       {nombre: 'Kinder', precio: 20}, {nombre: 'Ferrero', precio: 20}, {nombre: 'Tiramisú', precio: 20}
     ], 
-    opciones: { personalizacion_nombre: { precio: 1.00, activa: true } } },
+    opciones: { personalizacion_nombre: { precio: 1.00, activa: true }, sabores: {min:0, max:0}, toppings: {min:0, max:0}, coberturas: {min:0, max:0} } },
   { id: 21, nombre: 'Torta Helada Junior', precio: 11.00, categoria: 'TORTAS HELADAS', activo: true, emoji: '🎂', 
     variantes: [
       {nombre: 'Kinder', precio: 11}, {nombre: 'Ferrero', precio: 11}
     ],
-    opciones: { personalizacion_nombre: { precio: 1.00, activa: true } } },
+    opciones: { personalizacion_nombre: { precio: 1.00, activa: true }, sabores: {min:0, max:0}, toppings: {min:0, max:0}, coberturas: {min:0, max:0} } },
 
   // BEBIDAS
-  { id: 22, nombre: 'Monster Shake', precio: 3.50, categoria: 'BEBIDAS', activo: true, emoji: '🧋', opciones: { sabores: {min: 1, max: 1} } },
+  { id: 22, nombre: 'Monster Shake', precio: 3.50, categoria: 'BEBIDAS', activo: true, emoji: '🧋', opciones: { sabores: {min: 1, max: 1}, toppings: {min:0, max:0}, coberturas: {min:0, max:0} } },
   { id: 23, nombre: 'Milk Shake', precio: 2.25, categoria: 'BEBIDAS', activo: true, emoji: '🥤', opciones: { sabores: {min: 1, max: 1} } },
   { id: 24, nombre: 'Nevado', precio: 3.25, categoria: 'BEBIDAS', activo: true, emoji: '❄️', opciones: { sabores: {min: 1, max: 1} } },
   { id: 25, nombre: 'Capuchino', precio: 1.50, categoria: 'BEBIDAS', activo: true, emoji: '☕' },

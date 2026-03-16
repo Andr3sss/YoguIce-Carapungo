@@ -2342,3 +2342,307 @@ body.kds-mode #main-content {
   background: rgba(16, 185, 129, 0.3);
   color: #34d399;
 }
+
+/* ========================================
+   Product Admin - 3 Level Layout
+   ======================================== */
+
+.admin-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: var(--spacing-xl);
+  height: calc(100vh - 180px);
+}
+
+/* Level 1: Sidebar Categories */
+.admin-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  overflow-y: auto;
+}
+
+.admin-cat-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.admin-cat-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.admin-cat-btn.active {
+  background: var(--accent-pink-glow);
+  color: var(--accent-pink);
+  border-color: var(--accent-pink);
+  font-weight: 700;
+}
+
+.admin-cat-count {
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 2px 8px;
+  border-radius: 10px;
+  opacity: 0.7;
+}
+
+/* Level 2: Product Gallery */
+.admin-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.admin-toolbar {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+  background: var(--bg-secondary);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+.search-wrapper {
+  flex: 1;
+  position: relative;
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+}
+
+.admin-search {
+  width: 100%;
+  padding: 10px 10px 10px 38px;
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-lg);
+  overflow-y: auto;
+  padding-bottom: var(--spacing-xl);
+}
+
+.admin-product-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.admin-product-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--accent-lavender);
+  box-shadow: var(--shadow-md);
+}
+
+.admin-product-card.inactive {
+  opacity: 0.6;
+  filter: grayscale(0.5);
+}
+
+.card-top {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+}
+
+.card-emoji {
+  font-size: 32px;
+  background: var(--bg-tertiary);
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+}
+
+.card-info {
+  flex: 1;
+}
+
+.card-title {
+  font-weight: 700;
+  font-size: 16px;
+  margin-bottom: 2px;
+}
+
+.card-price {
+  color: var(--accent-mint);
+  font-weight: 800;
+  font-size: 18px;
+}
+
+.card-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+  margin-top: auto;
+}
+
+/* Level 3: Configuration Panel (Modal/Side) */
+.config-side-panel {
+  position: fixed;
+  right: -500px;
+  top: 0;
+  height: 100vh;
+  width: 480px;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--accent-lavender);
+  box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+  z-index: 1100;
+  transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+.config-side-panel.open {
+  right: 0;
+}
+
+.config-panel-header {
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  background: var(--bg-tertiary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.config-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+}
+
+.config-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.config-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.config-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-lavender);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.config-badge {
+  font-size: 11px;
+  background: var(--accent-pink-glow);
+  color: var(--accent-pink);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-weight: 600;
+}
+
+.config-item-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.config-chip {
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.config-limits {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-md);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 16px;
+  border-radius: var(--radius-md);
+}
+
+.limit-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.limit-input-group label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.limit-field {
+  background: var(--bg-primary);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-primary);
+  padding: 8px;
+  border-radius: 6px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.config-footer {
+  padding: var(--spacing-lg);
+  border-top: 1px solid rgba(255,255,255,0.05);
+  background: var(--bg-tertiary);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-md);
+}
+
+/* Overlays */
+.admin-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  z-index: 1090;
+  display: none;
+}
+
+.admin-overlay.visible {
+  display: block;
+}

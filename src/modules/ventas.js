@@ -37,7 +37,18 @@ export function render() {
 
   const today = new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  // Categorías
+  // Categorías con Iconos
+  const categoryIcons = {
+    'WAFFLES': '🧇',
+    'TULIPANES': '🍧',
+    'COPAS': '🍨',
+    'POSTRES': '🍰',
+    'TORTAS HELADAS': '🎂',
+    'BEBIDAS': '🥤',
+    'PROMOCIONES': '🏷️',
+    'Favoritos': '⭐'
+  };
+  
   const categoriasSet = new Set(products.map(p => p.categoria));
   const categories = ['Favoritos', ...Array.from(categoriasSet)];
 
@@ -86,7 +97,8 @@ export function render() {
       <div class="categories-sidebar" id="categories-sidebar">
         ${categories.map(c => `
           <button class="category-btn ${activeCategory === c ? 'active' : ''}" data-category="${c}">
-            📁 ${c}
+            <span style="font-size: 20px;">${categoryIcons[c] || '📁'}</span>
+            <span>${c}</span>
           </button>
         `).join('')}
       </div>
