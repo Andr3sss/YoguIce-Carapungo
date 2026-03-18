@@ -13,6 +13,7 @@ const DB_KEYS = {
   INSUMOS: 'heladeria_insumos',
   COCINA: 'heladeria_cocina',
   GASTOS: 'heladeria_gastos',
+  OPCIONES: 'heladeria_opciones',
 };
 
 const DB_VERSION = 1;
@@ -54,32 +55,95 @@ try {
   console.warn('Socket.IO no está disponible temporalmente', e);
 }
 
-export const SABORES_HELADO = [
-  'Chocolate', 'Vainilla', 'Fresa', 'Mora', 'Maracuyá', 'Chicle'
-];
+export function getOpcionesColeccion() {
+  return getCollection(DB_KEYS.OPCIONES);
+}
 
-export const COBERTURAS_LIQUIDAS = [
-  'Chocolate', 'Manjar', 'Chicle', 'Mora', 'Fresa', 'Maracuyá'
-];
+export function initOpciones() {
+  const existing = getCollection(DB_KEYS.OPCIONES);
+  if (existing.length === 0) {
+    let _id = 1;
+    const initial = [];
+    const _sab = ['Chocolate', 'Vainilla', 'Fresa', 'Mora', 'Maracuyá', 'Chicle'];
+    const _cob = ['Chocolate', 'Manjar', 'Chicle', 'Mora', 'Fresa', 'Maracuyá'];
+    const _top = ['Oreo', 'Chips Ahoy', 'Barquillo', 'Barriletes', 'Trululú', 'M&M', 'Gusanitos', 'Grageas', 'Chocolate blanco', 'Chocolate negro', 'Chocolate colores', 'Almendra', 'Nuez', 'Maní', 'Granola', 'Pasas', 'Fresas', 'Mora', 'Piña'];
+    const _ext = [{ nombre: 'Topping extra', precio: 0.20 }, { nombre: 'Jalea extra', precio: 0.20 }, { nombre: 'Queso extra', precio: 0.60 }, { nombre: 'Crema extra', precio: 0.60 }];
+    const _not = ['Sin fruta', 'Sin crema', 'Sin cobertura', 'Extra topping', 'Extra frío'];
 
-export const TOPPINGS = [
-  'Oreo', 'Chips Ahoy', 'Barquillo', 'Barriletes', 'Trululú', 'M&M',
-  'Gusanitos', 'Grageas', 'Chocolate blanco', 'Chocolate negro',
-  'Chocolate colores', 'Almendra', 'Nuez', 'Maní', 'Granola',
-  'Pasas', 'Fresas', 'Mora', 'Piña'
-];
+    _sab.forEach(n => initial.push({ id: _id++, nombre: n, tipo: 'sabor', activo: true, precio: 0 }));
+    _cob.forEach(n => initial.push({ id: _id++, nombre: n, tipo: 'cobertura', activo: true, precio: 0 }));
+    _top.forEach(n => initial.push({ id: _id++, nombre: n, tipo: 'topping', activo: true, precio: 0 }));
+    _ext.forEach(e => initial.push({ id: _id++, nombre: e.nombre, tipo: 'extra', activo: true, precio: e.precio }));
+    _not.forEach(n => initial.push({ id: _id++, nombre: n, tipo: 'nota', activo: true, precio: 0 }));
 
-export const EXTRAS = [
-  { nombre: 'Topping extra', precio: 0.20 },
-  { nombre: 'Jalea extra', precio: 0.20 },
-  { nombre: 'Queso extra', precio: 0.60 },
-  { nombre: 'Crema extra', precio: 0.60 }
-];
+    saveCollection(DB_KEYS.OPCIONES, initial);
+  }
+}
 
-export const NOTAS_RAPIDAS = [
-  'Sin fruta', 'Sin crema', 'Sin cobertura', 'Extra topping', 'Extra frío'
-];
+export function updateOpcion(id, updates) {
+  const ops = getCollection(DB_KEYS.OPCIONES);
+  const idx = ops.findIndex(o => o.id === Number(id));
+  if (idx !== -1) {
+    ops[idx] = { ...ops[idx], ...updates };
+    saveCollection(DB_KEYS.OPCIONES, ops);
+    emit('opciones-changed', ops);
+  }
+}
 
+export function addOpcion(opcion) {
+  const ops = getCollection(DB_KEYS.OPCIONES);
+  const newOp = {
+    ...opcion,
+    id: ops.length > 0 ? Math.max(...ops.map(o => o.id)) + 1 : 1,
+  };
+  ops.push(newOp);
+  saveCollection(DB_KEYS.OPCIONES, ops);
+  emit('opciones-changed', ops);
+  return newOp;
+}
+
+export function deleteOpcion(id) {
+  let ops = getCollection(DB_KEYS.OPCIONES);
+  ops = ops.filter(o => o.id !== Number(id));
+  saveCollection(DB_KEYS.OPCIONES, ops);
+  emit('opciones-changed', ops);
+}
+
+// Proxies for legacy arrays
+export const SABORES_HELADO = new Proxy([], {
+  get(target, prop) {
+    const arr = getOpcionesColeccion().filter(o => o.tipo === 'sabor' && o.activo).map(o => o.nombre);
+    const method = arr[prop]; return typeof method === 'function' ? method.bind(arr) : arr[prop];
+  }
+});
+
+export const COBERTURAS_LIQUIDAS = new Proxy([], {
+  get(target, prop) {
+    const arr = getOpcionesColeccion().filter(o => o.tipo === 'cobertura' && o.activo).map(o => o.nombre);
+    const method = arr[prop]; return typeof method === 'function' ? method.bind(arr) : arr[prop];
+  }
+});
+
+export const TOPPINGS = new Proxy([], {
+  get(target, prop) {
+    const arr = getOpcionesColeccion().filter(o => o.tipo === 'topping' && o.activo).map(o => o.nombre);
+    const method = arr[prop]; return typeof method === 'function' ? method.bind(arr) : arr[prop];
+  }
+});
+
+export const EXTRAS = new Proxy([], {
+  get(target, prop) {
+    const arr = getOpcionesColeccion().filter(o => o.tipo === 'extra' && o.activo);
+    const method = arr[prop]; return typeof method === 'function' ? method.bind(arr) : arr[prop];
+  }
+});
+
+export const NOTAS_RAPIDAS = new Proxy([], {
+  get(target, prop) {
+    const arr = getOpcionesColeccion().filter(o => o.tipo === 'nota' && o.activo).map(o => o.nombre);
+    const method = arr[prop]; return typeof method === 'function' ? method.bind(arr) : arr[prop];
+  }
+});
 // Menú Oficial Heladería
 const DEFAULT_PRODUCTS = [
   // WAFFLES
@@ -275,6 +339,13 @@ export function startCloudSync() {
     emit('gastos-changed', shadowStore.gastos);
   });
 
+  // Sync Categorias
+  onSnapshot(collection(firestore, 'categorias'), (snapshot) => {
+    shadowStore.categorias = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    saveCollection(DB_KEYS.CATEGORIAS, shadowStore.categorias);
+    emit('categories-changed', shadowStore.categorias);
+  });
+
   isSynced = true;
 }
 
@@ -329,6 +400,132 @@ export function deleteProduct(id) {
   products = products.filter(p => p.id !== id && p.id !== Number(id));
   saveCollection(DB_KEYS.PRODUCTOS, products);
   emit('products-changed', products);
+}
+
+// ========================================
+// Categories CRUD
+// ========================================
+
+export function initCategories() {
+  const existing = getCollection(DB_KEYS.CATEGORIAS);
+  const initialNames = ['WAFFLES', 'TULIPANES', 'COPAS', 'POSTRES', 'TORTAS HELADAS', 'BEBIDAS', 'PROMOCIONES'];
+  
+  if (existing.length === 0) {
+    const cats = initialNames.map((name, index) => ({ id: index + 1, nombre: name }));
+    saveCollection(DB_KEYS.CATEGORIAS, cats);
+  } else {
+    // Asegurar que no falte ninguna de las básicas si el usuario las borró por error
+    let changed = false;
+    initialNames.forEach((name, index) => {
+      if (!existing.find(c => c.nombre === name)) {
+        const nextId = existing.length > 0 ? Math.max(...existing.map(c => c.id)) + 1 : index + 1;
+        existing.push({ id: nextId, nombre: name });
+        changed = true;
+      }
+    });
+    if (changed) {
+      saveCollection(DB_KEYS.CATEGORIAS, existing);
+    }
+  }
+}
+
+export function getCategories() {
+  const cats = getCollection(DB_KEYS.CATEGORIAS);
+  const products = getCollection(DB_KEYS.PRODUCTOS);
+  
+  // Auto-sincronizar categorías que existan en productos pero no en la tabla de categorías
+  const catNames = new Set(cats.map(c => c.nombre?.toUpperCase()));
+  let maxId = cats.length > 0 ? Math.max(...cats.map(c => c.id)) : 0;
+  let changed = false;
+  
+  for (const p of products) {
+    const pCat = p.categoria?.toUpperCase();
+    if (pCat && !catNames.has(pCat)) {
+      maxId++;
+      cats.push({ id: maxId, nombre: pCat });
+      catNames.add(pCat);
+      changed = true;
+    }
+  }
+  
+  if (changed) {
+    saveCollection(DB_KEYS.CATEGORIAS, cats);
+  }
+  
+  return cats;
+}
+
+export async function addCategory(name) {
+  const cats = getCategories();
+  const id = cats.length > 0 ? Math.max(...cats.map(c => c.id)) + 1 : 1;
+  const newCat = { id, nombre: name.toUpperCase() };
+  cats.push(newCat);
+  saveCollection(DB_KEYS.CATEGORIAS, cats);
+  
+  // Cloud write
+  await setDoc(doc(firestore, 'categorias', id.toString()), newCat);
+  
+  emit('categories-changed', cats);
+  return newCat;
+}
+
+export async function updateCategory(id, newName) {
+  const cats = getCategories();
+  const index = cats.findIndex(c => c.id === id || c.id === Number(id));
+  if (index === -1) return null;
+  
+  const oldName = cats[index].nombre;
+  cats[index].nombre = newName.toUpperCase();
+  saveCollection(DB_KEYS.CATEGORIAS, cats);
+
+  // Cloud update
+  await updateDoc(doc(firestore, 'categorias', id.toString()), { nombre: cats[index].nombre });
+
+  // Actualizar productos asociados
+  const products = getProducts();
+  let changed = false;
+  products.forEach(p => {
+    if (p.categoria === oldName) {
+      p.categoria = cats[index].nombre;
+      changed = true;
+    }
+  });
+  if (changed) {
+    saveCollection(DB_KEYS.PRODUCTOS, products);
+    emit('products-changed', products);
+    // Nota: El sync de productos con Firebase debería manejar esto si existiera full sync.
+    // Como parece que productos no tiene onSnapshot bidireccional en productos.js, 
+    // lo ideal sería actualizar cada producto en Firestore también.
+    for (const p of products) {
+      if (p.categoria === cats[index].nombre) {
+        await setDoc(doc(firestore, 'productos', p.id.toString()), p);
+      }
+    }
+  }
+
+  emit('categories-changed', cats);
+  return cats[index];
+}
+
+export async function deleteCategory(id) {
+  const cats = getCategories();
+  const cat = cats.find(c => c.id === id || c.id === Number(id));
+  if (!cat) return;
+
+  // Verificar si hay productos
+  const products = getProducts();
+  const hasProducts = products.some(p => p.categoria === cat.nombre);
+  if (hasProducts) {
+    throw new Error('No se puede eliminar una categoría que tiene productos.');
+  }
+
+  const newCats = cats.filter(c => c.id !== id && c.id !== Number(id));
+  saveCollection(DB_KEYS.CATEGORIAS, newCats);
+  
+  // Cloud delete
+  await deleteDoc(doc(firestore, 'categorias', id.toString()));
+  
+  emit('categories-changed', newCats);
 }
 
 // ========================================
@@ -854,6 +1051,8 @@ export function getMonthlyTotals(sales) {
 // ========================================
 
 export function initDB() {
+  initOpciones();
+  initCategories();
   initProducts();
   startCloudSync();
 }
