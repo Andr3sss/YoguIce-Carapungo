@@ -683,13 +683,48 @@ export function getNextCuentaNumber() {
   return Math.max(...cuentas.map(c => c.numero || 0)) + 1;
 }
 
-export async function createCuenta() {
+/**
+ * Retorna las mesas que han sido ocupadas en los últimos 5 minutos o están abiertas.
+ */
+export function getMesasOcupadasReciente() {
+  const apertura = getAperturaHoy();
+  if (!apertura || apertura.estado !== 'abierto') return [];
+
+  const ahora = Date.now();
+  const CINCO_MINUTOS = 5 * 60 * 1000;
+
+  return getCuentas()
+    .filter(c => {
+      // Cuentas de la jornada actual
+      if (c.timestamp_apertura < apertura.timestamp_apertura) return false;
+      
+      // Si la cuenta está abierta, la mesa está ocupada
+      if (c.estado === 'abierta') return true;
+      
+      // Si la cuenta se cerró hace menos de 5 minutos, la mesa sigue "caliente"
+      if (c.estado === 'pagada' && c.timestamp_cierre && (ahora - c.timestamp_cierre < CINCO_MINUTOS)) {
+        return true;
+      }
+      
+      return false;
+    })
+    .map(c => c.mesa)
+    .filter(Boolean); // Solo las que tienen mesa asignada
+}
+
+export async function createCuenta(mesa = null) {
+  const apertura = getAperturaHoy();
+  if (!apertura || apertura.estado !== 'abierto') {
+    throw new Error('No se puede crear una cuenta sin una apertura de caja activa.');
+  }
+
   const cuentas = getCuentas();
   const now = new Date();
   const id = generateId();
   const cuenta = {
     id,
     numero: getNextCuentaNumber(),
+    mesa,
     estado: 'abierta',
     items: [],
     total: 0,

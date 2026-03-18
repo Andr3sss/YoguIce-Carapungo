@@ -1,14 +1,16 @@
 // ========================================
-// 🍦 Heladería POS - Ventas Module
-// POS screen with cuentas (tickets) system
+// 🍦 Heladería POS - Ventas Module (Optimized)
 // ========================================
 
 import * as db from '../db.js';
 import { formatCurrency, formatTime } from '../main.js';
 
+// --- State ---
 let activeCuentaId = null;
-let activeCategory = 'Favoritos';
+let wizardStep = 'categories';
+let wizardCategory = null;
 let configuringProduct = null;
+let showMesaSelector = false;
 let selectedVariant = null;
 let selectedSabores = new Set();
 let selectedCoberturas = new Set();
@@ -16,6 +18,13 @@ let selectedToppings = new Set();
 let selectedExtras = new Set();
 let selectedNotas = new Set();
 
+let currentModifier = 'normal';
+let lastAddedConfigId = null;
+
+let isListenersAttached = false;
+let renderTimeout = null;
+
+// --- Helpers ---
 function getTimeSince(timestamp) {
   const diff = Math.floor((Date.now() - timestamp) / 1000);
   if (diff < 60) return `${diff}s`;
@@ -23,136 +32,382 @@ function getTimeSince(timestamp) {
   return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m`;
 }
 
-export function render() {
-  const products = db.getActiveProducts();
-  const cuentasAbiertas = db.getCuentasAbiertas();
-  const jornadaSales = db.getSalesForJornada();
-  const summary = db.calcDaySummary(jornadaSales);
-  const activeCuenta = activeCuentaId ? db.getCuentaById(activeCuentaId) : null;
-
-  // Si la cuenta activa fue cerrada/cancelada, deseleccionarla
-  if (activeCuenta && activeCuenta.estado !== 'abierta') {
-    activeCuentaId = null;
+// --- Wizard State Machine ---
+function advanceWizardStep() {
+  const p = configuringProduct;
+  if (!p || !p.opciones) {
+    addCurrentWizardProduct();
+    return;
   }
-
-  const today = new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
-
-  // Categorías con Iconos
-  const categoryIcons = {
-    'WAFFLES': '🧇',
-    'TULIPANES': '🍧',
-    'COPAS': '🍨',
-    'POSTRES': '🍰',
-    'TORTAS HELADAS': '🎂',
-    'BEBIDAS': '🥤',
-    'PROMOCIONES': '🏷️',
-    'Favoritos': '⭐'
-  };
   
+  if (wizardStep === 'products') {
+    if (p.opciones.sabores?.max > 0) wizardStep = 'sabores';
+    else if (p.opciones.coberturas?.max > 0) wizardStep = 'coberturas';
+    else if (p.opciones.toppings?.max > 0) wizardStep = 'toppings';
+    else wizardStep = 'extras_notas';
+  } else if (wizardStep === 'sabores') {
+    if (p.opciones.coberturas?.max > 0) wizardStep = 'coberturas';
+    else if (p.opciones.toppings?.max > 0) wizardStep = 'toppings';
+    else wizardStep = 'extras_notas';
+  } else if (wizardStep === 'coberturas') {
+    if (p.opciones.toppings?.max > 0) wizardStep = 'toppings';
+    else wizardStep = 'extras_notas';
+  } else if (wizardStep === 'toppings') {
+    wizardStep = 'extras_notas';
+  } else if (wizardStep === 'extras_notas') {
+    addCurrentWizardProduct();
+  }
+  
+  currentModifier = 'normal';
+  rerender('wizard');
+}
+
+function goWizardBack() {
+  const p = configuringProduct;
+  if (wizardStep === 'products') {
+    wizardStep = 'categories';
+    wizardCategory = null;
+  } else if (wizardStep === 'sabores') {
+    wizardStep = 'products';
+    configuringProduct = null;
+  } else if (wizardStep === 'coberturas') {
+    if (p.opciones.sabores?.max > 0) wizardStep = 'sabores';
+    else { wizardStep = 'products'; configuringProduct = null; }
+  } else if (wizardStep === 'toppings') {
+    if (p.opciones.coberturas?.max > 0) wizardStep = 'coberturas';
+    else if (p.opciones.sabores?.max > 0) wizardStep = 'sabores';
+    else { wizardStep = 'products'; configuringProduct = null; }
+  } else if (wizardStep === 'extras_notas') {
+    if (p.opciones.toppings?.max > 0) wizardStep = 'toppings';
+    else if (p.opciones.coberturas?.max > 0) wizardStep = 'coberturas';
+    else if (p.opciones.sabores?.max > 0) wizardStep = 'sabores';
+    else { wizardStep = 'products'; configuringProduct = null; }
+  }
+  
+  currentModifier = 'normal';
+  rerender('wizard');
+}
+
+function addCurrentWizardProduct() {
+  const p = configuringProduct;
+  const config = {
+      variante: selectedVariant,
+      sabores: [...selectedSabores],
+      coberturas: [...selectedCoberturas],
+      toppings: [...selectedToppings],
+      extras: [...selectedExtras].map(en => db.EXTRAS.find(ex => ex.nombre === en)).filter(Boolean),
+      notas: [...selectedNotas]
+  };
+  lastAddedConfigId = p.id; 
+  db.addItemToCuenta(activeCuentaId, p, config).then(() => {
+      wizardStep = 'success';
+      rerender('wizard');
+      rerender('panel');
+      setTimeout(() => { lastAddedConfigId = null; rerender('panel'); }, 700);
+  });
+}
+
+// --- Renderers ---
+
+function renderCuentasBar() {
+  const cuentasAbiertas = db.getCuentasAbiertas();
+  const apertura = db.getAperturaHoy();
+  const isAperturaActiva = apertura && apertura.estado === 'abierto';
+
+  return `
+    <div class="cuentas-bar-header">
+      <h3>🎫 Cuentas Abiertas</h3>
+      <button class="btn btn-primary btn-sm" data-action="nueva-cuenta" ${!isAperturaActiva ? 'style="opacity:0.5; cursor:not-allowed;" title="Primero abre el día"' : ''}>
+        ➕ Nueva Cuenta
+      </button>
+    </div>
+    <div class="cuentas-list" id="cuentas-list">
+      ${cuentasAbiertas.length === 0 ? `
+        <div class="cuentas-empty">
+          <span>No hay cuentas abiertas</span>
+          <span class="cuentas-empty-hint">Crea una para empezar a vender</span>
+        </div>
+      ` : cuentasAbiertas.map(c => `
+        <button class="cuenta-card ${activeCuentaId === c.id ? 'active' : ''}" data-action="select-cuenta" data-id="${c.id}">
+          <div class="cuenta-card-number">#${c.numero}${c.mesa ? ` <span class="mesa-badge">MESA ${c.mesa}</span>` : ''}</div>
+          <div class="cuenta-card-total">${formatCurrency(c.total)}</div>
+          <div class="cuenta-card-meta">
+            <span>${c.items.length} items</span>
+            <span>⏱ ${getTimeSince(c.timestamp_apertura)}</span>
+          </div>
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+const categoryIcons = {
+  'WAFFLES': '🧇', 'TULIPANES': '🍧', 'COPAS': '🍨', 'POSTRES': '🍰',
+  'TORTAS HELADAS': '🎂', 'BEBIDAS': '🥤', 'PROMOCIONES': '🏷️', 'Favoritos': '⭐'
+};
+
+const categoryColors = {
+  'WAFFLES': 'cat-waffles', 'TULIPANES': 'cat-tulipanes', 'COPAS': 'cat-copas',
+  'POSTRES': 'cat-postres', 'TORTAS HELADAS': 'cat-tortas', 'BEBIDAS': 'cat-bebidas',
+  'PROMOCIONES': 'cat-promociones'
+};
+
+function getOptionColorClass(tipo, nombre) {
+  if (tipo !== 'sabor') return '';
+  const n = nombre.toLowerCase();
+  if (n.includes('choco')) return 'sabor-chocolate';
+  if (n.includes('vaini')) return 'sabor-vainilla';
+  if (n.includes('fresa')) return 'sabor-fresa';
+  if (n.includes('mora')) return 'sabor-mora';
+  if (n.includes('marac')) return 'sabor-maracuya';
+  if (n.includes('chicle')) return 'sabor-chicle';
+  return 'sabor-default';
+}
+
+function renderWizard() {
+  if (wizardStep === 'categories') return renderWizardCategories();
+  if (wizardStep === 'products') return renderWizardProducts();
+  if (wizardStep === 'sabores' || wizardStep === 'coberturas' || wizardStep === 'toppings') return renderWizardOptions(wizardStep);
+  if (wizardStep === 'extras_notas') return renderWizardExtrasNotas();
+  if (wizardStep === 'success') return renderWizardSuccess();
+  if (wizardStep === 'review') return renderWizardReview();
+  return '';
+}
+
+function renderWizardHeader(title, subtitle, stepIdx, totalSteps) {
+  const dots = Array.from({length: totalSteps}).map((_, i) => 
+    `<div class="wizard-step-dot ${i === stepIdx ? 'active' : (i < stepIdx ? 'completed' : '')}"></div>`
+  ).join('');
+  
+  return `
+    <div class="wizard-header">
+      ${wizardStep !== 'categories' && wizardStep !== 'success' ? `<button class="wizard-back-btn" data-action="wizard-back">←</button>` : `<div style="width:40px"></div>`}
+      <div class="wizard-title">
+        <h2>${title}</h2>
+        ${subtitle ? `<p>${subtitle}</p>` : ''}
+      </div>
+      <div class="wizard-progress">${dots}</div>
+    </div>
+  `;
+}
+
+function renderWizardCategories() {
+  const products = db.getActiveProducts();
   const categoriasSet = new Set(products.map(p => p.categoria));
   const categories = ['Favoritos', ...Array.from(categoriasSet)];
 
-  // Productos a mostrar central
-  let displayProducts = [];
-  if (activeCategory === 'Favoritos') {
-    const favNames = ['Soft', 'Cono', 'Bubble Waffle', 'Milk Shake'];
-    displayProducts = products.filter(p => favNames.includes(p.nombre));
-    if (displayProducts.length === 0) displayProducts = products.slice(0, 8);
-  } else {
-    displayProducts = products.filter(p => p.categoria === activeCategory);
-  }
-
   return `
-    <!-- Barra Cuentas Abiertas -->
-    <div class="cuentas-bar">
-      <div class="cuentas-bar-header">
-        <h3>🎫 Cuentas Abiertas</h3>
-        <button class="btn btn-primary btn-sm" id="btn-nueva-cuenta">
-          ➕ Nueva Cuenta
-        </button>
-      </div>
-      <div class="cuentas-list" id="cuentas-list">
-        ${cuentasAbiertas.length === 0 ? `
-          <div class="cuentas-empty">
-            <span>No hay cuentas abiertas</span>
-            <span class="cuentas-empty-hint">Crea una para empezar a vender</span>
-          </div>
-        ` : cuentasAbiertas.map(c => `
-          <button class="cuenta-card ${activeCuentaId === c.id ? 'active' : ''}" data-cuenta-id="${c.id}">
-            <div class="cuenta-card-number">#${c.numero}</div>
-            <div class="cuenta-card-total">${formatCurrency(c.total)}</div>
-            <div class="cuenta-card-meta">
-              <span>${c.items.length} items</span>
-              <span>⏱ ${getTimeSince(c.timestamp_apertura)}</span>
-            </div>
-          </button>
-        `).join('')}
+    <div class="wizard-main">
+      ${renderWizardHeader('¿Qué desea el cliente?', 'Selecciona una categoría', 0, 5)}
+      <div class="wizard-body">
+        <div class="wizard-cat-grid">
+          ${categories.map(c => `
+            <button class="wizard-btn ${categoryColors[c] || 'cat-default'}" data-action="wizard-sel-cat" data-val="${c}">
+              <span class="wizard-btn-emoji">${categoryIcons[c] || '📁'}</span>
+              <span>${c}</span>
+            </button>
+          `).join('')}
+        </div>
       </div>
     </div>
+  `;
+}
 
-    <!-- Layout POS Principal 3 Columnas -->
-    <div class="pos-layout">
+function renderWizardProducts() {
+  const products = db.getActiveProducts();
+  let displayProducts = wizardCategory === 'Favoritos' 
+    ? products.filter(p => ['Soft', 'Cono', 'Bubble Waffle', 'Milk Shake'].includes(p.nombre)).concat(products.slice(0, 8)).slice(0,8)
+    : products.filter(p => p.categoria === wizardCategory);
 
-      <!-- Columna Izquierda: Sidebar de Categorías -->
-      <div class="categories-sidebar" id="categories-sidebar">
-        ${categories.map(c => `
-          <button class="category-btn ${activeCategory === c ? 'active' : ''}" data-category="${c}">
-            <span style="font-size: 20px;">${categoryIcons[c] || '📁'}</span>
-            <span>${c}</span>
-          </button>
-        `).join('')}
-      </div>
-
-      <!-- Columna Central: Productos o Panel de Configuración -->
-      <div class="products-section">
-        ${configuringProduct ? renderQuickConfigPanel() : `
-          <div class="products-grid" id="products-grid">
-            ${displayProducts.map(p => `
-              <button class="product-btn ${!activeCuentaId ? 'disabled' : ''}" data-id="${p.id}" id="product-btn-${p.id}" ${!activeCuentaId ? 'title="Crea o selecciona una cuenta primero"' : ''}>
-                <span class="product-emoji">${p.emoji || '🍦'}</span>
-                <span class="product-name">${p.nombre}</span>
-                <span class="product-price">${formatCurrency(p.precio)}</span>
-              </button>
-            `).join('')}
-          </div>
-        `}
-      </div>
-
-      <!-- Columna Derecha: Detalle de la Cuenta y Resumen -->
-      <div class="right-panel">
-        ${activeCuenta && activeCuenta.estado === 'abierta' ? renderCuentaDetail(activeCuenta) : renderNoCuenta()}
-
-        <!-- Day summary compact -->
-        <div class="summary-panel compact" style="margin-top: auto;">
-          <div class="summary-header">
-            <h3>📊 Resumen del Día</h3>
-            <div class="summary-date">${today}</div>
-          </div>
-          <div class="summary-stats" id="summary-stats">
-            <div class="stat-row cash">
-              <span class="stat-label">💵 Efectivo</span>
-              <span class="stat-value" id="total-cash">${formatCurrency(summary.efectivo)}</span>
-            </div>
-            <div class="stat-row card">
-              <span class="stat-label">💳 Tarjeta</span>
-              <span class="stat-value" id="total-card">${formatCurrency(summary.tarjeta)}</span>
-            </div>
-            <div class="stat-row transfer">
-              <span class="stat-label">📱 Transfer.</span>
-              <span class="stat-value" id="total-transfer">${formatCurrency(summary.transferencia)}</span>
-            </div>
-          </div>
-          <div class="summary-total">
-            <div class="total-amount" id="total-amount">${formatCurrency(summary.total)}</div>
-            <div class="total-label">Total del día</div>
-          </div>
+  return `
+    <div class="wizard-main">
+      ${renderWizardHeader(`${categoryIcons[wizardCategory] || '📁'} ${wizardCategory}`, 'Selecciona el producto', 1, 5)}
+      <div class="wizard-body">
+        <div class="wizard-prod-grid">
+          ${displayProducts.map(p => `
+            <button class="wizard-btn cat-default" style="padding:16px 8px;" data-action="wizard-sel-prod" data-id="${p.id}" ${!activeCuentaId ? 'disabled style="opacity:0.5"' : ''} title="${!activeCuentaId ? 'Abre una cuenta primero' : ''}">
+              <span class="wizard-btn-emoji" style="font-size:32px;">${p.emoji || '🍦'}</span>
+              <span>${p.nombre}</span>
+              <span style="color:var(--accent-mint); font-weight:800; font-size:14px; margin-top:4px;">${formatCurrency(p.precio)}</span>
+            </button>
+          `).join('')}
         </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderWizardOptions(tipo) {
+  const p = configuringProduct;
+  const optConfig = p.opciones?.[tipo] || {min:0, max:0};
+  const list = tipo === 'sabores' ? db.SABORES_HELADO : (tipo === 'coberturas' ? db.COBERTURAS_LIQUIDAS : db.TOPPINGS);
+  const selectedSet = tipo === 'sabores' ? selectedSabores : (tipo === 'coberturas' ? selectedCoberturas : selectedToppings);
+  const title = tipo.charAt(0).toUpperCase() + tipo.slice(1);
+  const stepIdx = tipo === 'sabores' ? 2 : (tipo === 'coberturas' ? 3 : 4);
+  
+  const reachedMax = selectedSet.size >= optConfig.max;
+  const reachedMin = selectedSet.size >= optConfig.min;
+
+  return `
+    <div class="wizard-main">
+      ${renderWizardHeader(`Elige ${title}`, `<span style="color:var(--accent-mint); font-weight:700;">Para: ${p.nombre}</span> &bull; Seleccionado: ${selectedSet.size} de ${optConfig.max} (Min: ${optConfig.min})`, stepIdx, 5)}
+      <div class="wizard-body">
         
-        <!-- Mobile FAB to open the ticket -->
-        <button id="mobile-cart-fab" class="mobile-ticket-fab">
-          <span>🛒 Mi Cuenta</span>
-          <strong>${formatCurrency(activeCuenta ? activeCuenta.total : 0)}</strong>
-        </button>
+        <div class="modifier-modes" style="display:flex; overflow-x:auto; padding-bottom:12px; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05); margin-bottom: 16px;">
+          <button class="mod-btn ${currentModifier === 'normal' ? 'active' : ''}" data-action="set-mod" data-val="normal">⚡ Normal</button>
+          <button class="mod-btn ${currentModifier === 'sin' ? 'active' : ''}" data-action="set-mod" data-val="sin">🚫 Sin</button>
+          <button class="mod-btn ${currentModifier === 'extra' ? 'active' : ''}" data-action="set-mod" data-val="extra">➕ Extra</button>
+          <button class="mod-btn ${currentModifier === 'aparte' ? 'active' : ''}" data-action="set-mod" data-val="aparte">📦 Aparte</button>
+          <button class="mod-btn ${currentModifier === 'poco' ? 'active' : ''}" data-action="set-mod" data-val="poco">🤏 Poco</button>
+        </div>
+
+        <div class="wizard-opt-grid">
+          ${list.map(item => {
+            const hasIt = selectedSet.has(item) || selectedSet.has('Sin '+item) || selectedSet.has(item+' (Extra)') || selectedSet.has(item+' (Aparte)') || selectedSet.has('Poco '+item);
+            return `
+              <button class="wizard-opt-btn ${hasIt ? 'opt-selected' : ''} ${getOptionColorClass(tipo.substring(0,tipo.length-1), item)}" data-action="wizard-toggle-opt" data-tipo="${tipo}" data-val="${item}">
+                ${item}
+              </button>
+            `;
+          }).join('')}
+          ${reachedMax ? `
+            <button class="wizard-opt-btn opt-extra" data-action="wizard-add-extra-opt" data-tipo="${tipo}">
+              ➕ ${title.substring(0,title.length-1)} Extra (+$0.20)
+            </button>
+          ` : ''}
+        </div>
+      </div>
+      <div class="wizard-footer">
+        <div class="wizard-summary-bar">
+          ${[...selectedSet].map(s => `<span class="wizard-sum-item">${s}</span>`).join('')}
+        </div>
+        <button class="btn btn-primary" ${!reachedMin ? 'disabled' : ''} data-action="wizard-next">Siguiente ➔</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderWizardExtrasNotas() {
+  const p = configuringProduct;
+  return `
+    <div class="wizard-main">
+      ${renderWizardHeader(`Extras y Notas`, `<span style="color:var(--accent-mint); font-weight:700;">Para: ${p.nombre}</span> &bull; (Opcional)`, 5, 5)}
+      <div class="wizard-body">
+        <h4 style="margin-bottom:12px;">Extras (+$$)</h4>
+        <div class="wizard-opt-grid" style="margin-bottom:24px;">
+          ${db.EXTRAS.map(e => `
+            <button class="wizard-opt-btn ${selectedExtras.has(e.nombre) ? 'opt-selected' : ''}" data-action="wizard-toggle-extra" data-val="${e.nombre}">
+              ${e.nombre} <span style="font-size:10px; opacity:0.7;">+${formatCurrency(e.precio)}</span>
+            </button>
+          `).join('')}
+        </div>
+
+        <h4 style="margin-bottom:12px; color:var(--danger)">Notas para Cocina</h4>
+        <div class="wizard-opt-grid">
+          ${db.NOTAS_RAPIDAS.map(n => `
+            <button class="wizard-opt-btn ${selectedNotas.has(n) ? 'opt-selected' : ''}" data-action="wizard-toggle-nota" data-val="${n}">
+              ${n}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+      <div class="wizard-footer">
+        <div class="wizard-summary-bar"></div>
+        <button class="btn btn-primary btn-lg" data-action="wizard-finish-product">✓ Terminar Producto</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderWizardSuccess() {
+  const p = configuringProduct;
+  return `
+    <div class="wizard-main">
+      <div class="wizard-success">
+        <div class="ws-icon">✅</div>
+        <div class="ws-title">${p ? p.nombre : 'Producto'} agregado</div>
+        <div class="ws-desc">El producto se agregó a la cuenta actual</div>
+        
+        <div class="ws-actions">
+          <button class="ws-btn ws-btn-add" data-action="wizard-go-home">
+            <span class="ws-icon-small">➕</span>
+            Agregar otro
+          </button>
+          <button class="ws-btn ws-btn-save" data-action="wizard-review">
+            <span class="ws-icon-small">📋</span>
+            Ver Pedido
+          </button>
+          <button class="ws-btn ws-btn-kitchen" data-action="enviar-cocina">
+            <span class="ws-icon-small">👨‍🍳</span>
+            Enviar a Cocina
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderWizardReview() {
+  const cuenta = activeCuentaId ? db.getCuentaById(activeCuentaId) : null;
+  if (!cuenta) return '';
+  
+  return `
+    <div class="wizard-main">
+      ${renderWizardHeader('Resumen del Pedido', 'Revisa con el cliente antes de enviar', 5, 5)}
+      <div class="wizard-body" style="background:var(--surface-1);">
+        <div class="review-list">
+          ${cuenta.items.map(item => `
+            <div style="display:flex; justify-content:space-between; padding:16px; border-bottom:1px solid rgba(255,255,255,0.05); align-items:center;">
+              <div style="display:flex; gap:16px; align-items:center;">
+                <span style="font-size:32px;">${item.emoji}</span>
+                <div>
+                  <div style="font-size:18px; font-weight:700;">${item.cantidad}x ${item.nombre}</div>
+                  ${item.detalles ? `<div style="font-size:13px; color:var(--text-muted); margin-top:4px;">${item.detalles}</div>` : ''}
+                </div>
+              </div>
+              <div style="font-size:18px; font-weight:700; color:var(--accent-mint)">
+                ${formatCurrency(item.precio * item.cantidad)}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <div class="wizard-footer">
+        <div class="wizard-summary-bar">
+          <span class="cuenta-total-amount" style="font-size:20px; font-weight:800;">TOTAL: ${formatCurrency(cuenta.total)}</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <button class="btn btn-secondary btn-lg" data-action="wizard-go-home">➕ Seguir Agregando</button>
+          <button class="btn btn-warning btn-lg" data-action="enviar-cocina">👨‍🍳 Enviar a Cocina</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderRightPanel() {
+  const activeCuenta = activeCuentaId ? db.getCuentaById(activeCuentaId) : null;
+  const jornadaSales = db.getSalesForJornada();
+  const summary = db.calcDaySummary(jornadaSales);
+  const today = new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+  const hasCuenta = activeCuenta && activeCuenta.estado === 'abierta';
+
+  return `
+    ${hasCuenta ? renderCuentaDetail(activeCuenta) : renderNoCuenta()}
+
+    <div class="summary-panel compact ${hasCuenta ? 'collapsed' : ''}" style="margin-top: auto;">
+      <div class="summary-header">
+        <h3>📊 ${hasCuenta ? `💰 ${formatCurrency(summary.total)} hoy` : 'Resumen del Día'}</h3>
+        <div class="summary-date">${today}</div>
+      </div>
+      <div class="summary-stats">
+        <div class="stat-row cash"><span>💵 Efectivo</span><span>${formatCurrency(summary.efectivo)}</span></div>
+        <div class="stat-row card"><span>💳 Tarjeta</span><span>${formatCurrency(summary.tarjeta)}</span></div>
+        <div class="stat-row transfer"><span>📱 Transfer.</span><span>${formatCurrency(summary.transferencia)}</span></div>
+      </div>
+      <div class="summary-total">
+        <div class="total-amount">${formatCurrency(summary.total)}</div>
+        <div class="total-label">Total del día</div>
       </div>
     </div>
   `;
@@ -164,7 +419,7 @@ function renderNoCuenta() {
       <div class="empty-state" style="padding: 32px 16px;">
         <div class="empty-icon">🎫</div>
         <p style="font-size: 15px; font-weight: 600; margin-bottom: 4px;">Sin cuenta activa</p>
-        <p>Crea una nueva cuenta o selecciona una abierta para agregar productos</p>
+        <p>Crea una nueva cuenta o selecciona una abierta</p>
       </div>
     </div>
   `;
@@ -176,9 +431,10 @@ function renderCuentaDetail(cuenta) {
     <div class="cuenta-detail">
       <div class="cuenta-detail-header">
         <div>
-          <h3>🎫 Cuenta #${cuenta.numero}</h3>
-          <span class="cuenta-detail-time">Abierta a las ${formatTime(cuenta.hora_apertura)} · ${getTimeSince(cuenta.timestamp_apertura)}</span>
+          <h3>🎫 Cuenta #${cuenta.numero}${cuenta.mesa ? ` - MESA ${cuenta.mesa}` : ''}</h3>
+          <span class="cuenta-detail-time">Abierta ${formatTime(cuenta.hora_apertura)}</span>
         </div>
+        <button class="cuenta-cancel-btn" data-action="cancelar-cuenta" title="Cancelar cuenta">✕</button>
       </div>
 
       <div class="cuenta-items" id="cuenta-items">
@@ -187,526 +443,326 @@ function renderCuentaDetail(cuenta) {
             <div class="empty-icon">🍦</div>
             <p>Toca un producto para agregarlo</p>
           </div>
-        ` : cuenta.items.map(item => `
-          <div class="cuenta-item">
+        ` : cuenta.items.map(item => {
+          const isJustAdded = lastAddedConfigId && (item.configId === lastAddedConfigId || item.producto_id === lastAddedConfigId);
+          return `
+          <div class="cuenta-item ${isJustAdded ? 'just-added' : ''}">
             <div class="cuenta-item-info">
               <span class="cuenta-item-emoji">${item.emoji}</span>
-              <div style="display: flex; flex-direction: column;">
+              <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
                 <span class="cuenta-item-name">${item.nombre}</span>
-                ${item.detalles ? `<span style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">${item.detalles}</span>` : ''}
+                ${item.detalles ? `<span style="font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.detalles}</span>` : ''}
               </div>
             </div>
-            <div class="cuenta-item-actions" style="margin-top: 6px;">
-              <button class="cuenta-item-qty-btn duplicate-btn" data-add-product="${item.configId || item.producto_id}" title="Clonar Pedido" style="background: none; border: 1px dashed var(--border); color: var(--text-secondary); margin-right: 8px;">📑</button>
-              <button class="cuenta-item-qty-btn minus" data-remove-product="${item.configId || item.producto_id}" title="Quitar uno">−</button>
+            <div class="cuenta-item-actions">
+              <button class="cuenta-item-qty-btn duplicate-btn" data-action="add-item" data-id="${item.configId || item.producto_id}" title="Clonar" style="background: none; border: 1px dashed var(--border); color: var(--text-secondary);">📑</button>
+              <button class="cuenta-item-qty-btn minus" data-action="remove-item" data-id="${item.configId || item.producto_id}" title="Quitar">−</button>
               <span class="cuenta-item-qty">${item.cantidad}</span>
-              <button class="cuenta-item-qty-btn plus" data-add-product="${item.configId || item.producto_id}" title="Agregar uno">+</button>
-              <span class="cuenta-item-subtotal" style="margin-left: 12px; font-weight: bold;">${formatCurrency(item.precio * item.cantidad)}</span>
+              <button class="cuenta-item-qty-btn plus" data-action="add-item" data-id="${item.configId || item.producto_id}" title="Agregar">+</button>
+              <span class="cuenta-item-subtotal" style="margin-left: 8px; font-weight: bold;">${formatCurrency(item.precio * item.cantidad)}</span>
             </div>
           </div>
-        `).join('')}
+        `}).join('')}
       </div>
 
       <div class="cuenta-footer">
         <div class="cuenta-total-row">
           <span class="cuenta-total-label">${itemCount} producto${itemCount !== 1 ? 's' : ''}</span>
-          <span class="cuenta-total-amount" id="cuenta-total">${formatCurrency(cuenta.total)}</span>
+          <span class="cuenta-total-amount">${formatCurrency(cuenta.total)}</span>
         </div>
-        <div class="cuenta-action-btns" style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button class="btn btn-warning btn-lg cuenta-btn-cobrar" id="btn-enviar-cocina" style="flex: 1; min-width: 140px;" ${cuenta.items.length === 0 ? 'disabled' : ''}>
-            👨‍🍳 Enviar a Cocina
-          </button>
-          <button class="btn btn-success btn-lg cuenta-btn-cobrar" id="btn-cobrar" style="flex: 1; min-width: 140px;" ${cuenta.items.length === 0 ? 'disabled' : ''}>
-            💰 Cobrar
-          </button>
-          <button class="btn btn-ghost btn-sm" id="btn-cancelar-cuenta" title="Cancelar cuenta" style="width: 100%; margin-top: 4px;">
-            ✕ Cancelar
-          </button>
+        <div class="cuenta-action-btns" style="display: flex; gap: 8px;">
+          <button class="btn btn-warning btn-lg cuenta-btn-cobrar" data-action="wizard-review" style="flex: 1;" ${cuenta.items.length === 0 ? 'disabled' : ''}>📋 Revisar</button>
+          <button class="btn btn-success btn-lg cuenta-btn-cobrar" data-action="cobrar-cuenta" style="flex: 1;" ${cuenta.items.length === 0 ? 'disabled' : ''}>💰 Cobrar</button>
         </div>
       </div>
     </div>
   `;
 }
 
-function renderQuickConfigPanel() {
-  const product = configuringProduct;
-  const opt = product.opciones || {};
-  const hasVariants = product.variantes && product.variantes.length > 0;
-  
-  // Lógica de límites (si no hay límites configurados, por defecto min:0 max:1)
-  const maxSabores = opt.sabores?.max || 0;
-  const maxCoberturas = opt.coberturas?.max || 0;
-  const maxToppings = opt.toppings?.max || 0;
-  
-  const selectedSaboresCount = selectedSabores.size;
-  const isSaborLimitReached = maxSabores > 0 && selectedSaboresCount >= maxSabores;
-
-  const selectedCoberturasCount = selectedCoberturas.size;
-  const isCoberturaLimitReached = maxCoberturas > 0 && selectedCoberturasCount >= maxCoberturas;
-
-  const selectedToppingsCount = selectedToppings.size;
-  const isToppingsLimitReached = maxToppings > 0 && selectedToppingsCount >= maxToppings;
-
-  // Validar si cumplió el mínimo
-  const minSabores = opt.sabores?.min || 0;
-  const missingSabores = Math.max(0, minSabores - selectedSaboresCount);
-  
-  const minCoberturas = opt.coberturas?.min || 0;
-  const missingCoberturas = Math.max(0, minCoberturas - selectedCoberturasCount);
-
-  // Calcular precio total dinámico sumando extras
-  let basePrice = selectedVariant ? selectedVariant.precio : product.precio;
-  let extrasPrice = Array.from(selectedExtras).reduce((sum, extraName) => {
-    const extraInfo = db.EXTRAS.find(e => e.nombre === extraName);
-    return sum + (extraInfo ? extraInfo.precio : 0);
-  }, 0);
-  let finalRunningTotal = basePrice + extrasPrice;
-
-  // Generar estado del botón Confirmar
-  let validationMessage = [];
-  if (missingSabores > 0) validationMessage.push(`Falta ${missingSabores} sabor${missingSabores > 1 ? 'es' : ''}`);
-  if (missingCoberturas > 0) validationMessage.push(`Falta ${missingCoberturas} cobertura${missingCoberturas > 1 ? 's' : ''}`);
-  
-  const canConfirm = (!hasVariants || selectedVariant) && validationMessage.length === 0;
-  const confirmText = canConfirm 
-    ? `✅ Confirmar Pedido - ${formatCurrency(finalRunningTotal)}` 
-    : `⚠️ ${validationMessage.join(', ')}`;
-
+function renderMesaSelector() {
+  const mesasOcupadas = db.getMesasOcupadasReciente();
+  const mesas = [1, 2, 3, 4, 5, 6, 7];
   return `
-    <div class="quick-config-panel">
-      <div class="config-header">
-        <div>
-           <h2 style="font-size: 1.25rem;">${product.emoji} ${product.nombre}</h2>
-           ${opt.incluye_desc ? `<span style="font-size: 0.8rem; color: var(--text-secondary);">${opt.incluye_desc}</span>` : ''}
-        </div>
-        <button class="btn btn-ghost" id="btn-cancel-config">✕ CERRAR</button>
-      </div>
-
-      <div class="config-scroll-area" style="overflow-y: auto; padding: 0 16px 16px 16px; display: flex; flex-direction: column; gap: 20px;">
-        
-        ${hasVariants ? `
-          <div class="config-section">
-            <div class="config-section-title">1. Tamaño / Variante <span style="font-weight: normal; font-size: 0.8rem;">(Requerido)</span></div>
-            <div class="config-options-grid">
-              ${product.variantes.map((v, idx) => `
-                <button class="option-btn variant-btn ${selectedVariant?.nombre === v.nombre ? 'active' : ''}" data-variant-idx="${idx}">
-                  ${v.nombre}
-                  <span class="option-price">${formatCurrency(v.precio)}</span>
-                </button>
-              `).join('')}
-            </div>
-          </div>
-        ` : ''}
-
-        ${maxSabores > 0 ? `
-          <div class="config-section">
-            <div class="config-section-title">Sabores de Helado <span style="font-weight: normal; font-size: 0.8rem;">(Escoge ${maxSabores})</span></div>
-            <div class="config-options-grid">
-              ${db.SABORES_HELADO.map(s => {
-                const isActive = selectedSabores.has(s);
-                const isDisabled = !isActive && isSaborLimitReached;
-                return `
-                <button class="option-btn sabor-btn ${isActive ? 'active' : ''}" data-sabor="${s}" ${isDisabled ? 'disabled style="opacity:0.4"' : ''}>
-                  ${s}
-                </button>`;
-              }).join('')}
-            </div>
-          </div>
-        ` : ''}
-
-        ${maxCoberturas > 0 ? `
-          <div class="config-section">
-            <div class="config-section-title">Sirope / Cobertura <span style="font-weight: normal; font-size: 0.8rem;">(Escoge ${maxCoberturas})</span></div>
-            <div class="config-options-grid">
-              ${db.COBERTURAS_LIQUIDAS.map(c => {
-                const isActive = selectedCoberturas.has(c);
-                const isDisabled = !isActive && isCoberturaLimitReached;
-                return `
-                <button class="option-btn cobertura-btn ${isActive ? 'active' : ''}" data-cobertura="${c}" ${isDisabled ? 'disabled style="opacity:0.4"' : ''}>
-                  ${c}
-                </button>`;
-              }).join('')}
-            </div>
-          </div>
-        ` : ''}
-
-        ${maxToppings > 0 ? `
-          <div class="config-section">
-            <div class="config-section-title">Toppings Incluidos <span style="font-weight: normal; font-size: 0.8rem;">(Escoge ${maxToppings})</span></div>
-            <div class="config-options-grid">
-              ${db.TOPPINGS.map(t => {
-                const isActive = selectedToppings.has(t);
-                const isDisabled = !isActive && isToppingsLimitReached;
-                return `
-                <button class="option-btn topping-btn ${isActive ? 'active' : ''}" data-topping="${t}" ${isDisabled ? 'disabled style="opacity:0.4"' : ''}>
-                  ${t}
-                </button>`;
-              }).join('')}
-            </div>
-          </div>
-        ` : ''}
-
-        <!-- EXTRAS (+$$$) -->
-        <div class="config-section">
-           <div class="config-section-title" style="color: var(--primary);">Extras Adicionales <span style="font-weight: normal; font-size: 0.8rem;">(+ Costo Extra)</span></div>
-           <div class="config-options-grid">
-             ${db.EXTRAS.map(e => `
-               <button class="option-btn extra-btn ${selectedExtras.has(e.nombre) ? 'active' : ''}" data-extra="${e.nombre}">
-                 ${e.nombre} <br/> <span style="font-size: 0.75rem;">+${formatCurrency(e.precio)}</span>
-               </button>
-             `).join('')}
-           </div>
-        </div>
-
-        <!-- NOTAS RÁPIDAS -->
-        <div class="config-section">
-           <div class="config-section-title" style="color: var(--danger);">Notas para Cocina <span style="font-weight: normal; font-size: 0.8rem;">(Sin costo)</span></div>
-           <div class="config-options-grid">
-             ${db.NOTAS_RAPIDAS.map(n => `
-               <button class="option-btn nota-btn ${selectedNotas.has(n) ? 'active' : ''}" data-nota="${n}">
-                 ${n}
-               </button>
-             `).join('')}
-           </div>
-        </div>
-
-      </div>
-
-      <div style="padding: 16px; border-top: 1px solid var(--border);">
-        <button class="btn ${canConfirm ? 'btn-primary' : 'btn-secondary'} btn-lg" style="width: 100%; height: 60px; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);" id="btn-confirm-config" 
-          ${!canConfirm ? 'disabled' : ''}>
-          ${confirmText}
-        </button>
+    <div class="mesa-popover-backdrop" data-action="close-mesa-modal"></div>
+    <div class="mesa-popover">
+      <h4>🍽️ Seleccionar Mesa</h4>
+      <div class="mesa-popover-grid">
+        ${mesas.map(m => {
+          const occ = mesasOcupadas.includes(m) || mesasOcupadas.includes(m.toString());
+          return `<button class="mesa-select-btn ${occ ? 'occupied' : ''}" data-action="select-mesa" data-val="${m}">${m}${occ?'<div style="font-size:8px">OCUPADA</div>':''}</button>`;
+        }).join('')}
+        <button class="mesa-select-btn" data-action="select-mesa" data-val="LLEVAR" style="color:var(--accent-mint)">🥡 LLEVAR</button>
       </div>
     </div>
   `;
 }
 
-export function init() {
-  // New cuenta button
-  const btnNueva = document.getElementById('btn-nueva-cuenta');
-  if (btnNueva) {
-    btnNueva.addEventListener('click', async () => {
-      const cuenta = await db.createCuenta();
-      activeCuentaId = cuenta.id;
-      rerender();
-      window.showToast(`🎫 Cuenta #${cuenta.numero} creada`, 'success');
-    });
-  }
+// --- Logic ---
 
-  // Cuenta card selection
-  const cuentasList = document.getElementById('cuentas-list');
-  if (cuentasList) {
-    cuentasList.addEventListener('click', (e) => {
-      const card = e.target.closest('.cuenta-card');
-      if (!card) return;
-      activeCuentaId = card.dataset.cuentaId;
-      rerender();
-    });
-  }
+export function render() {
+  return `
+    <div class="cuentas-bar" id="section-cuentas-bar" style="position:relative;">${renderCuentasBar()}${showMesaSelector ? renderMesaSelector() : ''}</div>
+    <div class="wizard-layout">
+      <div id="section-wizard">${renderWizard()}</div>
+      <div class="right-panel" id="section-right-panel">${renderRightPanel()}</div>
+    </div>
+  `;
+}
 
-  // Categories sidebar click
-  const categoriesSidebar = document.getElementById('categories-sidebar');
-  if (categoriesSidebar) {
-    categoriesSidebar.addEventListener('click', (e) => {
-      const btn = e.target.closest('.category-btn');
-      if (!btn) return;
-      activeCategory = btn.dataset.category;
-      configuringProduct = null;
-      rerender();
-    });
-  }
-
-  // Product click → add to active cuenta or open config
-  const grid = document.getElementById('products-grid');
-  if (grid) {
-    grid.addEventListener('click', async (e) => {
-      const btn = e.target.closest('.product-btn');
-      if (!btn) return;
-      if (!activeCuentaId) {
-        window.showToast('⚠️ Crea o selecciona una cuenta primero', 'error');
-        return;
-      }
-      const product = db.getProductById(btn.dataset.id);
-      if (!product) return;
-
-      if ((product.variantes && product.variantes.length > 0) || (product.opciones && Object.keys(product.opciones).length > 0)) {
-        configuringProduct = product;
-        selectedVariant = product.variantes ? product.variantes[0] : null; 
-        selectedSabores.clear();
-        selectedCoberturas.clear();
-        selectedToppings.clear();
-        selectedExtras.clear();
-        selectedNotas.clear();
-        rerender();
-      } else {
-        await db.addItemToCuenta(activeCuentaId, product);
-        rerender();
-      }
-    });
-  }
-
-  // Quick config panel actions
-  const configPanel = document.querySelector('.quick-config-panel');
-  if (configPanel) {
-    configPanel.addEventListener('click', async (e) => {
-      if (e.target.id === 'btn-cancel-config') {
-        configuringProduct = null;
-        rerender();
-        return;
-      }
-
-      if (e.target.id === 'btn-confirm-config') {
-        const config = {
-          variante: selectedVariant,
-          sabores: Array.from(selectedSabores),
-          coberturas: Array.from(selectedCoberturas),
-          toppings: Array.from(selectedToppings),
-          extras: Array.from(selectedExtras)
-            .map(en => db.EXTRAS.find(ex => ex.nombre === en))
-            .filter(Boolean),
-          notas: Array.from(selectedNotas)
-        };
-        await db.addItemToCuenta(activeCuentaId, configuringProduct, config);
-        configuringProduct = null;
-        rerender();
-        return;
-      }
-
-      const variantBtn = e.target.closest('.variant-btn');
-      if (variantBtn) {
-        const idx = variantBtn.dataset.variantIdx;
-        selectedVariant = configuringProduct.variantes[idx];
-        rerender();
-        return;
-      }
-
-      const saborBtn = e.target.closest('.sabor-btn');
-      if (saborBtn && !saborBtn.hasAttribute('disabled')) {
-        const s = saborBtn.dataset.sabor;
-        if (selectedSabores.has(s)) selectedSabores.delete(s);
-        else selectedSabores.add(s);
-        rerender();
-        return;
-      }
-
-      const coberturaBtn = e.target.closest('.cobertura-btn');
-      if (coberturaBtn && !coberturaBtn.hasAttribute('disabled')) {
-        const c = coberturaBtn.dataset.cobertura;
-        if (selectedCoberturas.has(c)) selectedCoberturas.delete(c);
-        else selectedCoberturas.add(c);
-        rerender();
-        return;
-      }
-
-      const toppingBtn = e.target.closest('.topping-btn');
-      if (toppingBtn && !toppingBtn.hasAttribute('disabled')) {
-        const t = toppingBtn.dataset.topping;
-        if (selectedToppings.has(t)) selectedToppings.delete(t);
-        else selectedToppings.add(t);
-        rerender();
-        return;
-      }
-
-      const extraBtn = e.target.closest('.extra-btn');
-      if (extraBtn) {
-        const ex = extraBtn.dataset.extra;
-        if (selectedExtras.has(ex)) selectedExtras.delete(ex);
-        else selectedExtras.add(ex);
-        rerender();
-        return;
-      }
-
-      const notaBtn = e.target.closest('.nota-btn');
-      if (notaBtn) {
-        const n = notaBtn.dataset.nota;
-        if (selectedNotas.has(n)) selectedNotas.delete(n);
-        else selectedNotas.add(n);
-        rerender();
-        return;
-      }
-    });
-  }
-
-  // Cuenta item actions (add/remove)
-  const cuentaItems = document.getElementById('cuenta-items');
-  if (cuentaItems) {
-    cuentaItems.addEventListener('click', async (e) => {
-      const addBtn = e.target.closest('[data-add-product]');
-      const removeBtn = e.target.closest('[data-remove-product]');
-      if (addBtn && activeCuentaId) {
-        await db.incrementItemQty(activeCuentaId, addBtn.dataset.addProduct);
-        rerender();
-      }
-      if (removeBtn && activeCuentaId) {
-        await db.removeItemFromCuenta(activeCuentaId, removeBtn.dataset.removeProduct);
-        rerender();
-      }
-    });
-  }
-
-  // Enviar a Cocina button
-  const btnCocina = document.getElementById('btn-enviar-cocina');
-  if (btnCocina) {
-    btnCocina.addEventListener('click', async () => {
-      if (!activeCuentaId) return;
-      const cuenta = db.getCuentaById(activeCuentaId);
-      if (!cuenta || cuenta.items.length === 0) return;
-      
-      const pedido = await db.enviarACocina(activeCuentaId);
-      if (pedido) {
-        window.showToast('👨‍🍳 Pedido enviado a cocina', 'success');
-      }
-    });
-  }
-
-  // Cobrar button
-  const btnCobrar = document.getElementById('btn-cobrar');
-  if (btnCobrar) {
-    btnCobrar.addEventListener('click', () => {
-      if (!activeCuentaId) return;
-      const cuenta = db.getCuentaById(activeCuentaId);
-      if (!cuenta || cuenta.items.length === 0) return;
-      openPaymentModal(cuenta);
-    });
-  }
-
-  // Cancel cuenta button
-  const btnCancelar = document.getElementById('btn-cancelar-cuenta');
-  if (btnCancelar) {
-    btnCancelar.addEventListener('click', async () => {
-      if (!activeCuentaId) return;
-      const cuenta = db.getCuentaById(activeCuentaId);
-      if (!cuenta) return;
-
-      const itemCount = cuenta.items.reduce((s, i) => s + i.cantidad, 0);
-      const confirmed = await window.showConfirm({
-        icon: '🚫',
-        title: `¿Cancelar Cuenta #${cuenta.numero}?`,
-        message: 'Los productos de esta cuenta no se cobrarán. La cuenta quedará registrada como cancelada en el historial.',
-        details: `
-          <div class="confirm-cuenta-info">
-            <div class="confirm-cuenta-row">
-              <span>Productos</span><strong>${itemCount}</strong>
-            </div>
-            <div class="confirm-cuenta-row">
-              <span>Total a perder</span><strong style="color: var(--danger);">${formatCurrency(cuenta.total)}</strong>
-            </div>
-          </div>
-        `,
-        confirmText: '🚫 Sí, cancelar cuenta',
-        confirmClass: 'btn-danger',
-      });
-
-      if (confirmed) {
-        await db.cancelarCuenta(activeCuentaId);
-        activeCuentaId = null;
-        rerender();
-        window.showToast('🚫 Cuenta cancelada', 'info');
-      }
-    });
-  }
-
-  // --- Mobile Bottom Sheet Toggles ---
-  const fab = document.getElementById('mobile-cart-fab');
-  const ticketPanel = document.querySelector('.right-panel'); // Changed from .ticket-panel to .right-panel
+function rerender(section = null) {
+  if (renderTimeout) return; // Prevent render storm
   
-  // Inject handle for swiping down if not exists
-  if (ticketPanel && !ticketPanel.querySelector('.bottom-sheet-handle')) {
-    const handle = document.createElement('div');
-    handle.className = 'bottom-sheet-handle';
-    ticketPanel.insertBefore(handle, ticketPanel.firstChild);
-    
-    // Close on handle click or swipe down
-    handle.addEventListener('click', () => {
-      ticketPanel.classList.remove('bottom-sheet-active');
-    });
-  }
+  renderTimeout = requestAnimationFrame(() => {
+    const sections = {
+      'cuentas': ['section-cuentas-bar', () => renderCuentasBar() + (showMesaSelector ? renderMesaSelector() : '')],
+      'wizard': ['section-wizard', renderWizard],
+      'panel': ['section-right-panel', renderRightPanel]
+    };
 
-  if (fab && ticketPanel) {
-    fab.addEventListener('click', () => {
-      ticketPanel.classList.add('bottom-sheet-active');
-    });
-    
-    // Update FAB text dynamically
-    const cuenta = db.getCuentaById(activeCuentaId);
-    if (cuenta) {
-      const itemsCount = cuenta.items.reduce((s, i) => s + i.cantidad, 0);
-      fab.innerHTML = `<span>🛒 Ver Cuenta (${itemsCount})</span><strong>${formatCurrency(cuenta.total)}</strong>`;
-      fab.style.display = 'flex';
+    if (section && sections[section]) {
+      const [id, func] = sections[section];
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = func();
     } else {
-      fab.style.display = 'none';
+      const container = document.getElementById('page-container');
+      if (container) container.innerHTML = render();
     }
-  }
+    renderTimeout = null;
+  });
+}
 
-  // Listen for sales changes to update day summary
-  db.on('sale-added', updateDaySummary);
-  db.on('sales-changed', updateDaySummary);
-  
-  // Listen for accounts changes from Cloud
-  db.on('cuentas-changed', rerender);
+function handlePosActions(e) {
+  const target = e.target.closest('[data-action]');
+  if (!target) return;
+  const action = target.dataset.action;
+
+  switch (action) {
+    case 'nueva-cuenta':
+      const apertura = db.getAperturaHoy();
+      if (!apertura || apertura.estado !== 'abierto') {
+        window.showToast('⚠️ Abre el día primero', 'error');
+        return;
+      }
+      showMesaSelector = true;
+      rerender('cuentas');
+      break;
+
+    case 'close-mesa-modal':
+      showMesaSelector = false;
+      rerender('cuentas');
+      break;
+
+    case 'select-mesa':
+      const mesa = target.dataset.val;
+      confirmMesa(mesa);
+      break;
+
+    case 'select-cuenta':
+      activeCuentaId = target.dataset.id;
+      rerender();
+      break;
+
+    case 'wizard-sel-cat':
+      wizardCategory = target.dataset.val;
+      wizardStep = 'products';
+      rerender('wizard');
+      break;
+
+    case 'wizard-sel-prod':
+      if (!activeCuentaId) return window.showToast('⚠️ Selecciona cuenta', 'error');
+      const pId = target.dataset.id;
+      const p = db.getProductById(pId);
+      
+      configuringProduct = p;
+      selectedVariant = p.variantes?.[0] || null;
+      selectedSabores.clear(); selectedCoberturas.clear(); selectedToppings.clear(); selectedExtras.clear(); selectedNotas.clear();
+      
+      if (!p.opciones && !p.variantes?.length) {
+        addCurrentWizardProduct();
+      } else {
+        advanceWizardStep();
+      }
+      break;
+
+    case 'wizard-back':
+      goWizardBack();
+      break;
+
+    case 'wizard-next':
+      advanceWizardStep();
+      break;
+
+    case 'wizard-finish-product':
+      addCurrentWizardProduct();
+      break;
+
+    case 'wizard-toggle-opt':
+      const tipoOpt = target.dataset.tipo; // sabores, coberturas, toppings
+      const baseOptVal = target.dataset.val;
+      
+      let finalVal = baseOptVal;
+      if (currentModifier === 'sin') finalVal = `Sin ${baseOptVal}`;
+      if (currentModifier === 'extra') finalVal = `${baseOptVal} (Extra)`;
+      if (currentModifier === 'aparte') finalVal = `${baseOptVal} (Aparte)`;
+      if (currentModifier === 'poco') finalVal = tipoOpt==='coberturas' ? `Poca ${baseOptVal}` : `Poco ${baseOptVal}`;
+
+      let theSet = tipoOpt === 'sabores' ? selectedSabores : (tipoOpt === 'coberturas' ? selectedCoberturas : selectedToppings);
+      
+      // Toggle logic
+      let found = false;
+      for (let item of theSet) {
+        if (item.includes(baseOptVal)) {
+          theSet.delete(item);
+          found = true;
+        }
+      }
+      if (!found) theSet.add(finalVal);
+      
+      rerender('wizard');
+      
+      // Auto-advance
+      if (!found && currentModifier === 'normal') {
+        const optMax = configuringProduct.opciones[tipoOpt]?.max;
+        if (theSet.size === optMax) {
+          setTimeout(() => advanceWizardStep(), 250);
+        }
+      }
+      break;
+
+    case 'wizard-add-extra-opt':
+      currentModifier = 'extra';
+      rerender('wizard');
+      window.showToast('Selecciona la opción extra extra', 'info');
+      break;
+
+    case 'wizard-toggle-extra':
+      const ex = target.dataset.val;
+      if (selectedExtras.has(ex)) selectedExtras.delete(ex); else selectedExtras.add(ex);
+      rerender('wizard');
+      break;
+
+    case 'wizard-toggle-nota':
+      const n = target.dataset.val;
+      if (selectedNotas.has(n)) selectedNotas.delete(n); else selectedNotas.add(n);
+      rerender('wizard');
+      break;
+
+    case 'wizard-go-home':
+      wizardStep = 'categories';
+      wizardCategory = null;
+      configuringProduct = null;
+      rerender('wizard');
+      break;
+
+    case 'wizard-review':
+      wizardStep = 'review';
+      rerender('wizard');
+      break;
+
+    case 'set-mod':
+      currentModifier = target.dataset.val;
+      rerender('wizard');
+      break;
+
+    case 'add-item':
+      db.incrementItemQty(activeCuentaId, target.dataset.id).then(() => rerender('panel'));
+      break;
+
+    case 'remove-item':
+      db.removeItemFromCuenta(activeCuentaId, target.dataset.id).then(() => rerender('panel'));
+      break;
+
+    case 'enviar-cocina':
+      db.enviarACocina(activeCuentaId).then(() => {
+        window.showToast('👨‍🍳 Enviado', 'success');
+        if (wizardStep === 'success') {
+          wizardStep = 'categories';
+          wizardCategory = null;
+          configuringProduct = null;
+          rerender('wizard');
+        }
+      });
+      break;
+
+    case 'cobrar-cuenta':
+      openPaymentModal(db.getCuentaById(activeCuentaId));
+      break;
+
+    case 'cancelar-cuenta':
+      cancelarCuentaActual();
+      break;
+
+    case 'toggle-mobile-ticket':
+      document.querySelector('.right-panel')?.classList.toggle('bottom-sheet-active');
+      break;
+  }
+}
+
+async function confirmMesa(mesa) {
+  const occ = db.getMesasOcupadasReciente();
+  if (occ.includes(mesa) || occ.includes(Number(mesa))) {
+    const ok = await window.showConfirm({
+      title: 'Mesa Ocupada',
+      message: `La mesa ${mesa} tuvo actividad hace poco. ¿Usarla de nuevo?`,
+      confirmText: 'Sí, usar'
+    });
+    if (!ok) return;
+  }
+  const c = await db.createCuenta(mesa);
+  activeCuentaId = c.id;
+  showMesaSelector = false;
+  rerender();
+  window.showToast(`🎫 Cuenta #${c.numero} - Mesa ${mesa}`, 'success');
+}
+
+async function cancelarCuentaActual() {
+  const c = db.getCuentaById(activeCuentaId);
+  const ok = await window.showConfirm({
+    title: `¿Cancelar Cuenta #${c.numero}?`,
+    confirmText: 'Sí, cancelar',
+    confirmClass: 'btn-danger'
+  });
+  if (ok) {
+    await db.cancelarCuenta(activeCuentaId);
+    activeCuentaId = null;
+    rerender();
+  }
 }
 
 function openPaymentModal(cuenta) {
   const modal = document.getElementById('payment-modal');
-  const nameEl = document.getElementById('modal-product-name');
-  const priceEl = document.getElementById('modal-product-price');
-
-  const totalItems = cuenta.items.reduce((s, i) => s + i.cantidad, 0);
-  nameEl.textContent = `🎫 Cuenta #${cuenta.numero} · ${totalItems} productos`;
-  priceEl.textContent = formatCurrency(cuenta.total);
+  document.getElementById('modal-product-name').textContent = `🎫 Cuenta #${cuenta.numero}`;
+  document.getElementById('modal-product-price').textContent = formatCurrency(cuenta.total);
   modal.style.display = 'flex';
 }
 
 export async function handlePayment(method) {
   if (!activeCuentaId) return;
-
-  const cuenta = await db.cobrarCuenta(activeCuentaId, method);
-  if (!cuenta) return;
-
-  activeCuentaId = null;
-
-  // Close modal
-  const modal = document.getElementById('payment-modal');
-  modal.style.display = 'none';
-
-  rerender();
-  window.showToast(`✅ Cuenta #${cuenta.numero} cobrada (${method}) - ${formatCurrency(cuenta.total)}`, 'success');
-}
-
-function rerender() {
-  const container = document.getElementById('page-container');
-  if (container) {
-    container.innerHTML = render();
-    init();
+  const c = await db.cobrarCuenta(activeCuentaId, method);
+  if (c) {
+    activeCuentaId = null;
+    document.getElementById('payment-modal').style.display = 'none';
+    rerender();
+    window.showToast(`✅ Cobrado: ${formatCurrency(c.total)}`, 'success');
   }
 }
 
-function updateDaySummary() {
-  const jornadaSales = db.getSalesForJornada();
-  const summary = db.calcDaySummary(jornadaSales);
+// --- Lifecycle ---
 
-  const cashEl = document.getElementById('total-cash');
-  const cardEl = document.getElementById('total-card');
-  const transferEl = document.getElementById('total-transfer');
-  const totalEl = document.getElementById('total-amount');
-  const countEl = document.getElementById('sales-count');
-  const avgEl = document.getElementById('sales-avg');
-
-  if (cashEl) cashEl.textContent = formatCurrency(summary.efectivo);
-  if (cardEl) cardEl.textContent = formatCurrency(summary.tarjeta);
-  if (transferEl) transferEl.textContent = formatCurrency(summary.transferencia);
-  if (totalEl) {
-    totalEl.textContent = formatCurrency(summary.total);
-    totalEl.classList.add('sale-flash');
-    setTimeout(() => totalEl.classList.remove('sale-flash'), 300);
+export function init() {
+  if (!isListenersAttached) {
+    const container = document.getElementById('page-container');
+    container.addEventListener('click', handlePosActions);
+    
+    // DB Listeners added ONLY ONCE
+    db.on('sale-added', () => rerender('panel'));
+    db.on('cuentas-changed', () => rerender());
+    db.on('products-changed', () => rerender('products'));
+    
+    isListenersAttached = true;
   }
-  if (countEl) countEl.textContent = summary.count;
-  if (avgEl) avgEl.textContent = formatCurrency(summary.average);
 }
 
 export function cleanup() {
-  db.off('sale-added', updateDaySummary);
-  db.off('sales-changed', updateDaySummary);
-  db.off('cuentas-changed', rerender);
+  // Not strictly needed with event delegation on page-container if container is destroyed
 }
