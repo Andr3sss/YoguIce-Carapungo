@@ -287,6 +287,7 @@ const shadowStore = {
   ventas: [],
   gastos: [],
   productos: [],
+  categorias: [],
 };
 
 let isSynced = false;
@@ -351,6 +352,27 @@ export function startCloudSync() {
     emit('categories-changed', shadowStore.categorias);
   });
 
+  // Sync Productos (Real-time Menu)
+  onSnapshot(collection(firestore, 'productos'), (snapshot) => {
+    console.log(`🔄 Firestore Sync: Received ${snapshot.docs.length} productos`);
+    if (snapshot.docs.length > 0) {
+      shadowStore.productos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      saveCollection(DB_KEYS.PRODUCTOS, shadowStore.productos);
+      emit('products-changed', shadowStore.productos);
+    } else {
+      // Si la nube está vacía pero local tiene datos, subirlos (seed)
+      const localProds = getCollection(DB_KEYS.PRODUCTOS);
+      if (localProds.length > 0) {
+        console.log("📤 Subiendo productos locales a la nube como semilla...");
+        localProds.forEach(p => {
+          setDoc(doc(firestore, 'productos', p.id.toString()), p).catch(console.error);
+        });
+      }
+    }
+  }, (error) => {
+    console.error('❌ Firestore Productos Sync Error:', error);
+  });
+
   isSynced = true;
 }
 
@@ -360,8 +382,9 @@ export function startCloudSync() {
 
 export function initProducts() {
   const existing = getCollection(DB_KEYS.PRODUCTOS);
-  // Force load new real menu structure if the local DB has fewer than 15 items (which means it's the old one)
-  if (existing.length < 15) {
+  // Solo cargamos defaults si está vacío. 
+  // La sincronización con Firestore se encargará de actualizar esto si hay datos en la nube.
+  if (existing.length === 0) {
     saveCollection(DB_KEYS.PRODUCTOS, DEFAULT_PRODUCTS);
   }
 }
@@ -380,13 +403,22 @@ export function getProductById(id) {
 
 export function addProduct(product) {
   const products = getProducts();
+  const id = products.length > 0 ? Math.max(...products.map(p => typeof p.id === 'number' ? p.id : 0)) + 1 : 1;
   const newProduct = {
     ...product,
-    id: products.length > 0 ? Math.max(...products.map(p => typeof p.id === 'number' ? p.id : 0)) + 1 : 1,
+    id,
   };
+  
+  // Shadow write (local)
   products.push(newProduct);
   saveCollection(DB_KEYS.PRODUCTOS, products);
   emit('products-changed', products);
+  
+  // Cloud write
+  setDoc(doc(firestore, 'productos', id.toString()), newProduct).catch(err => {
+    console.error("Error al subir producto a Firestore:", err);
+  });
+
   return newProduct;
 }
 
@@ -395,16 +427,31 @@ export function updateProduct(id, updates) {
   const index = products.findIndex(p => p.id === id || p.id === Number(id));
   if (index === -1) return null;
   products[index] = { ...products[index], ...updates };
+  
+  // Shadow write (local)
   saveCollection(DB_KEYS.PRODUCTOS, products);
   emit('products-changed', products);
+  
+  // Cloud update
+  updateDoc(doc(firestore, 'productos', id.toString()), updates).catch(err => {
+    console.error("Error al actualizar producto en Firestore:", err);
+  });
+
   return products[index];
 }
 
 export function deleteProduct(id) {
   let products = getProducts();
   products = products.filter(p => p.id !== id && p.id !== Number(id));
+  
+  // Shadow write (local)
   saveCollection(DB_KEYS.PRODUCTOS, products);
   emit('products-changed', products);
+  
+  // Cloud delete
+  deleteDoc(doc(firestore, 'productos', id.toString())).catch(err => {
+    console.error("Error al eliminar producto de Firestore:", err);
+  });
 }
 
 // ========================================
