@@ -1396,29 +1396,43 @@ canvas {
 
 @media (max-width: 768px) {
   :root {
-    --sidebar-width: 70px;
+    --sidebar-width: 0px;
   }
-
-  .nav-label,
-  .logo-text {
-    display: none;
+  
+  #sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 250px !important;
+    min-width: 250px !important;
+    transform: translateX(-100%);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.5);
+    background: var(--bg-secondary);
+    z-index: 2000;
+    transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+  }
+  
+  #sidebar.mobile-active {
+    transform: translateX(0);
   }
 
   .nav-btn {
-    justify-content: center;
-    padding: var(--spacing-md);
+    justify-content: flex-start;
+    padding: var(--spacing-md) var(--spacing-lg);
   }
 
   .nav-icon {
-    font-size: 24px;
+    font-size: 20px;
   }
 
   .sidebar-header {
-    justify-content: center;
+    justify-content: flex-start;
+    padding: var(--spacing-md) var(--spacing-lg);
   }
 
   #main-content {
-    padding: var(--spacing-md);
+    padding: 12px;
   }
 
   .products-grid {
@@ -3203,4 +3217,150 @@ input:checked + .toggle-slider:before {
 .ws-icon-small {
   font-size: 32px;
   margin-bottom: 8px;
+}
+
+/* ========================================
+   🧙‍♂️ WIZARD FLOW MOBILE
+   ======================================== */
+
+.mobile-ticket-fab {
+  display: none;
+}
+.mobile-menu-btn {
+  display: none;
+}
+.bottom-sheet-handle {
+  display: none;
+}
+.mobile-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 99;
+}
+.mobile-overlay.active {
+  display: block;
+}
+
+@media (max-width: 1024px) {
+  .wizard-layout {
+    grid-template-columns: 100%;
+    height: auto;
+    min-width: 0;
+    gap: 8px;
+  }
+  
+  .wizard-main {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .wizard-body {
+    padding: 16px;
+  }
+  
+  .wizard-footer {
+    padding: 16px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .mobile-menu-btn {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .right-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: 85vh;
+    z-index: 1000;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+    background: var(--bg-primary);
+    border-radius: 24px 24px 0 0;
+    box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+  }
+  
+  .right-panel.bottom-sheet-active {
+    transform: translateY(0);
+  }
+  
+  .bottom-sheet-handle {
+    display: block;
+    width: 40px;
+    height: 6px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 3px;
+    margin: 12px auto 16px auto;
+  }
+  
+  .mobile-ticket-fab {
+    display: flex;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--accent-mint);
+    color: #000;
+    padding: 12px 20px;
+    border-radius: 30px;
+    align-items: center;
+    gap: 12px;
+    font-size: 16px;
+    font-weight: 800;
+    z-index: 90;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    border: none;
+    cursor: pointer;
+  }
+  
+  .wizard-cat-grid, .wizard-opt-grid {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 12px;
+  }
+  
+  .wizard-prod-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 12px;
+  }
+  
+  .wizard-btn {
+    padding: 16px 8px;
+    font-size: 13px;
+    min-height: 100px;
+  }
+  
+  .wizard-btn-emoji {
+    font-size: 36px;
+  }
+  
+  .wizard-header {
+    padding: 12px 16px;
+  }
+  
+  .wizard-title h2 {
+    font-size: 18px;
+  }
+  
+  .ws-actions {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Hide non-waiter nav buttons on mobile to save space */
+  .nav-btn[data-page="cuadre"],
+  .nav-btn[data-page="historial"],
+  .nav-btn[data-page="reportes"],
+  .nav-btn[data-page="estadisticas"],
+  .nav-btn[data-page="gastos"],
+  .nav-btn[data-page="cocina"] {
+    display: none !important;
+  }
 }

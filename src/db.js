@@ -302,16 +302,21 @@ export function startCloudSync() {
   });
 
   // Sync Cuentas
+  console.log('📡 Subscribing to Cuentas onSnapshot...');
   onSnapshot(collection(firestore, 'cuentas'), (snapshot) => {
+    console.log(`🔄 Firestore Sync: Received ${snapshot.docs.length} cuentas (Source: ${snapshot.metadata.hasPendingWrites ? 'Local' : 'Server'})`);
     shadowStore.cuentas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     saveCollection(DB_KEYS.CUENTAS, shadowStore.cuentas);
     emit('cuentas-changed', shadowStore.cuentas);
+    
     // Emit for individual updated accounts if needed
     snapshot.docChanges().forEach(change => {
       if (change.type === "modified") {
         emit('cuenta-updated', { id: change.doc.id, ...change.doc.data() });
       }
     });
+  }, (error) => {
+    console.error('❌ Firestore Cuentas Sync Error:', error);
   });
 
   // Sync Cocina (KDS)
@@ -741,11 +746,13 @@ export async function createCuenta(mesa = null) {
   cuentas.push(cuenta);
   saveCollection(DB_KEYS.CUENTAS, cuentas);
   
-  // Cloud write
-  await setDoc(doc(firestore, 'cuentas', id), cuenta);
-  
+  // Emit IMMEDIATELY so local UI updates
   emit('cuenta-created', cuenta);
   emit('cuentas-changed', cuentas);
+
+  // Cloud write (awaited for cross-device sync)
+  await setDoc(doc(firestore, 'cuentas', id), cuenta);
+  
   return cuenta;
 }
 
@@ -806,17 +813,19 @@ export async function addItemToCuenta(cuentaId, producto, config = null) {
 
   cuenta.total = round2(cuenta.items.reduce((sum, i) => sum + round2(i.precio * i.cantidad), 0));
 
-  // Shadow write
+  // Shadow write (instant local persistence)
   saveCollection(DB_KEYS.CUENTAS, cuentas);
   
-  // Cloud write
+  // Emit IMMEDIATELY so local UI updates
+  emit('cuenta-updated', cuenta);
+  emit('cuentas-changed', cuentas);
+
+  // Cloud write (awaited for cross-device sync)
   await updateDoc(doc(firestore, 'cuentas', cuenta.id), {
     items: cuenta.items,
     total: cuenta.total
   });
 
-  emit('cuenta-updated', cuenta);
-  emit('cuentas-changed', cuentas);
   return cuenta;
 }
 
@@ -831,17 +840,19 @@ export async function incrementItemQty(cuentaId, configIdOrProdId) {
   cuenta.items[itemIndex].cantidad++;
   cuenta.total = round2(cuenta.items.reduce((sum, i) => sum + round2(i.precio * i.cantidad), 0));
 
-  // Shadow write
+  // Shadow write (instant local persistence)
   saveCollection(DB_KEYS.CUENTAS, cuentas);
   
-  // Cloud write
+  // Emit IMMEDIATELY so UI updates from local data
+  emit('cuenta-updated', cuenta);
+  emit('cuentas-changed', cuentas);
+
+  // Cloud write (awaited for cross-device sync)
   await updateDoc(doc(firestore, 'cuentas', cuenta.id), {
     items: cuenta.items,
     total: cuenta.total
   });
 
-  emit('cuenta-updated', cuenta);
-  emit('cuentas-changed', cuentas);
   return cuenta;
 }
 
@@ -861,17 +872,43 @@ export async function removeItemFromCuenta(cuentaId, configIdOrProdId) {
 
   cuenta.total = round2(cuenta.items.reduce((sum, i) => sum + round2(i.precio * i.cantidad), 0));
 
-  // Shadow write
+  // Shadow write (instant local persistence)
   saveCollection(DB_KEYS.CUENTAS, cuentas);
   
-  // Cloud write
+  // Emit IMMEDIATELY so UI updates from local data
+  emit('cuenta-updated', cuenta);
+  emit('cuentas-changed', cuentas);
+
+  // Cloud write (awaited for cross-device sync)
   await updateDoc(doc(firestore, 'cuentas', cuenta.id), {
     items: cuenta.items,
     total: cuenta.total
   });
 
+  return cuenta;
+}
+
+export async function deleteItemFromCuenta(cuentaId, configIdOrProdId) {
+  const cuentas = getCuentas();
+  const cuenta = cuentas.find(c => c.id === cuentaId);
+  if (!cuenta || cuenta.estado !== 'abierta') return null;
+
+  cuenta.items = cuenta.items.filter(i => i.configId !== configIdOrProdId && i.producto_id !== configIdOrProdId);
+  cuenta.total = round2(cuenta.items.reduce((sum, i) => sum + round2(i.precio * i.cantidad), 0));
+
+  // Shadow write (instant local persistence)
+  saveCollection(DB_KEYS.CUENTAS, cuentas);
+  
+  // Emit IMMEDIATELY so UI updates from local data
   emit('cuenta-updated', cuenta);
   emit('cuentas-changed', cuentas);
+
+  // Cloud write (awaited for cross-device sync)
+  await updateDoc(doc(firestore, 'cuentas', cuenta.id), {
+    items: cuenta.items,
+    total: cuenta.total
+  });
+
   return cuenta;
 }
 
@@ -891,7 +928,11 @@ export async function cobrarCuenta(cuentaId, metodoPago) {
   // Shadow write
   saveCollection(DB_KEYS.CUENTAS, cuentas);
 
-  // Cloud write
+  // Emit IMMEDIATELY so local UI updates
+  emit('cuenta-cerrada', cuenta);
+  emit('cuentas-changed', cuentas);
+
+  // Cloud write (awaited for cross-device sync)
   await updateDoc(doc(firestore, 'cuentas', cuenta.id), cuenta);
 
   // Generate sales in Cloud
@@ -916,8 +957,6 @@ export async function cobrarCuenta(cuentaId, metodoPago) {
     }
   });
 
-  emit('cuenta-cerrada', cuenta);
-  emit('cuentas-changed', cuentas);
   return cuenta;
 }
 
@@ -935,11 +974,13 @@ export async function cancelarCuenta(cuentaId) {
   // Shadow write
   saveCollection(DB_KEYS.CUENTAS, cuentas);
   
-  // Cloud write
-  await updateDoc(doc(firestore, 'cuentas', cuenta.id), cuenta);
-
+  // Emit IMMEDIATELY so local UI updates
   emit('cuenta-cancelada', cuenta);
   emit('cuentas-changed', cuentas);
+
+  // Cloud write (awaited for cross-device sync)
+  await updateDoc(doc(firestore, 'cuentas', cuenta.id), cuenta);
+
   return cuenta;
 }
 

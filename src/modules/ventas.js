@@ -22,9 +22,12 @@ let currentModifier = 'normal';
 let lastAddedConfigId = null;
 
 let isListenersAttached = false;
-let renderTimeout = null;
+let pendingRenders = new Set();
+let renderTimeoutId = null;
 
 // --- Helpers ---
+const isMobile = () => window.innerWidth < 1024;
+
 function getTimeSince(timestamp) {
   const diff = Math.floor((Date.now() - timestamp) / 1000);
   if (diff < 60) return `${diff}s`;
@@ -33,6 +36,18 @@ function getTimeSince(timestamp) {
 }
 
 // --- Wizard State Machine ---
+function resetWizard() {
+  wizardStep = 'categories';
+  wizardCategory = null;
+  configuringProduct = null;
+  selectedVariant = null;
+  selectedSabores.clear();
+  selectedCoberturas.clear();
+  selectedToppings.clear();
+  selectedExtras.clear();
+  selectedNotas.clear();
+}
+
 function advanceWizardStep() {
   const p = configuringProduct;
   if (!p || !p.opciones) {
@@ -115,10 +130,16 @@ function renderCuentasBar() {
   const isAperturaActiva = apertura && apertura.estado === 'abierto';
 
   return `
-    <div class="cuentas-bar-header">
-      <h3>🎫 Cuentas Abiertas</h3>
-      <button class="btn btn-primary btn-sm" data-action="nueva-cuenta" ${!isAperturaActiva ? 'style="opacity:0.5; cursor:not-allowed;" title="Primero abre el día"' : ''}>
-        ➕ Nueva Cuenta
+    <div class="cuentas-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px; gap: 12px;">
+      <div style="display:flex; align-items:center; gap:12px; flex: 1;">
+        <button class="mobile-menu-btn" data-action="toggle-sidebar" style="padding:8px; border:none; border-radius:8px; background:rgba(255,255,255,0.05); color:#fff; cursor:pointer; transition:background 0.2s;" title="Menú">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+        <h3 style="margin:0; font-size:20px; font-weight:800; white-space:nowrap; letter-spacing:-0.5px;">🎟️ Cuentas</h3>
+      </div>
+      <button class="btn btn-primary btn-sm" data-action="nueva-cuenta" ${!isAperturaActiva ? 'style="opacity:0.5; cursor:not-allowed;" title="Primero abre el día"' : ''} style="display:flex; align-items:center; gap:6px; padding:10px 16px; border-radius:24px; font-weight:700; flex-shrink:0; box-shadow:0 4px 12px rgba(255,107,157,0.3);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        Nueva Cuenta
       </button>
     </div>
     <div class="cuentas-list" id="cuentas-list">
@@ -253,7 +274,7 @@ function renderWizardOptions(tipo) {
       ${renderWizardHeader(`Elige ${title}`, `<span style="color:var(--accent-mint); font-weight:700;">Para: ${p.nombre}</span> &bull; Seleccionado: ${selectedSet.size} de ${optConfig.max} (Min: ${optConfig.min})`, stepIdx, 5)}
       <div class="wizard-body">
         
-        <div class="modifier-modes" style="display:flex; overflow-x:auto; padding-bottom:12px; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05); margin-bottom: 16px;">
+        <div class="modifier-modes" style="display:flex; overflow-x:auto; padding-bottom:12px; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05); margin-bottom: 16px; min-width: 0;">
           <button class="mod-btn ${currentModifier === 'normal' ? 'active' : ''}" data-action="set-mod" data-val="normal">⚡ Normal</button>
           <button class="mod-btn ${currentModifier === 'sin' ? 'active' : ''}" data-action="set-mod" data-val="sin">🚫 Sin</button>
           <button class="mod-btn ${currentModifier === 'extra' ? 'active' : ''}" data-action="set-mod" data-val="extra">➕ Extra</button>
@@ -333,7 +354,7 @@ function renderWizardSuccess() {
             <span class="ws-icon-small">➕</span>
             Agregar otro
           </button>
-          <button class="ws-btn ws-btn-save" data-action="wizard-review">
+          <button class="ws-btn ws-btn-save" data-action="${isMobile() ? 'toggle-mobile-ticket' : 'wizard-review'}">
             <span class="ws-icon-small">📋</span>
             Ver Pedido
           </button>
@@ -385,6 +406,8 @@ function renderWizardReview() {
   `;
 }
 
+// renderWizardReview is used for Desktop; for mobile, we use the Bottom Sheet directly.
+
 function renderRightPanel() {
   const activeCuenta = activeCuentaId ? db.getCuentaById(activeCuentaId) : null;
   const jornadaSales = db.getSalesForJornada();
@@ -393,6 +416,7 @@ function renderRightPanel() {
   const hasCuenta = activeCuenta && activeCuenta.estado === 'abierta';
 
   return `
+    <div class="bottom-sheet-handle" data-action="toggle-mobile-ticket"></div>
     ${hasCuenta ? renderCuentaDetail(activeCuenta) : renderNoCuenta()}
 
     <div class="summary-panel compact ${hasCuenta ? 'collapsed' : ''}" style="margin-top: auto;">
@@ -410,6 +434,16 @@ function renderRightPanel() {
         <div class="total-label">Total del día</div>
       </div>
     </div>
+  `;
+}
+
+function renderMobileFab() {
+  const activeCuenta = activeCuentaId ? db.getCuentaById(activeCuentaId) : null;
+  return `
+    <button id="mobile-cart-fab" class="mobile-ticket-fab" data-action="toggle-mobile-ticket">
+      <span>🛒 Ver Cargo</span>
+      <strong>${formatCurrency(activeCuenta ? activeCuenta.total : 0)}</strong>
+    </button>
   `;
 }
 
@@ -451,15 +485,16 @@ function renderCuentaDetail(cuenta) {
               <span class="cuenta-item-emoji">${item.emoji}</span>
               <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
                 <span class="cuenta-item-name">${item.nombre}</span>
-                ${item.detalles ? `<span style="font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.detalles}</span>` : ''}
+                ${item.detalles ? `<span style="font-size: 11px; color: var(--text-muted); line-height: 1.2; margin-top:2px;">${item.detalles}</span>` : ''}
               </div>
             </div>
             <div class="cuenta-item-actions">
-              <button class="cuenta-item-qty-btn duplicate-btn" data-action="add-item" data-id="${item.configId || item.producto_id}" title="Clonar" style="background: none; border: 1px dashed var(--border); color: var(--text-secondary);">📑</button>
+              <button class="cuenta-item-qty-btn duplicate-btn" data-action="add-item" data-id="${item.configId || item.producto_id}" title="Clonar" style="background: none; border: 1px dashed rgba(255,255,255,0.2); color: var(--text-secondary);">📑</button>
               <button class="cuenta-item-qty-btn minus" data-action="remove-item" data-id="${item.configId || item.producto_id}" title="Quitar">−</button>
               <span class="cuenta-item-qty">${item.cantidad}</span>
               <button class="cuenta-item-qty-btn plus" data-action="add-item" data-id="${item.configId || item.producto_id}" title="Agregar">+</button>
-              <span class="cuenta-item-subtotal" style="margin-left: 8px; font-weight: bold;">${formatCurrency(item.precio * item.cantidad)}</span>
+              <button class="cuenta-item-qty-btn delete-btn" data-action="delete-item-full" data-id="${item.configId || item.producto_id}" title="Eliminar" style="background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: var(--danger); margin-left:8px;">🗑️</button>
+              <span class="cuenta-item-subtotal" style="margin-left:auto; font-weight: bold;">${formatCurrency(item.precio * item.cantidad)}</span>
             </div>
           </div>
         `}).join('')}
@@ -471,7 +506,9 @@ function renderCuentaDetail(cuenta) {
           <span class="cuenta-total-amount">${formatCurrency(cuenta.total)}</span>
         </div>
         <div class="cuenta-action-btns" style="display: flex; gap: 8px;">
-          <button class="btn btn-warning btn-lg cuenta-btn-cobrar" data-action="wizard-review" style="flex: 1;" ${cuenta.items.length === 0 ? 'disabled' : ''}>📋 Revisar</button>
+          <button class="btn ${isMobile() ? 'btn-warning' : 'btn-secondary'} btn-lg cuenta-btn-cobrar" data-action="${isMobile() ? 'enviar-cocina' : 'wizard-review'}" style="flex: 1;" ${cuenta.items.length === 0 ? 'disabled' : ''}>
+            ${isMobile() ? '👨‍🍳 Cocina' : '📋 Revisar'}
+          </button>
           <button class="btn btn-success btn-lg cuenta-btn-cobrar" data-action="cobrar-cuenta" style="flex: 1;" ${cuenta.items.length === 0 ? 'disabled' : ''}>💰 Cobrar</button>
         </div>
       </div>
@@ -505,30 +542,60 @@ export function render() {
     <div class="wizard-layout">
       <div id="section-wizard">${renderWizard()}</div>
       <div class="right-panel" id="section-right-panel">${renderRightPanel()}</div>
+      <div id="section-mobile-fab">${renderMobileFab()}</div>
     </div>
   `;
 }
 
 function rerender(section = null) {
-  if (renderTimeout) return; // Prevent render storm
+  console.log(`🎬 Rerender requested for: ${section || 'full'}`);
+  if (section) {
+    pendingRenders.add(section);
+  } else {
+    pendingRenders.clear();
+    pendingRenders.add('__full__');
+  }
   
-  renderTimeout = requestAnimationFrame(() => {
+  if (renderTimeoutId) return; // Already scheduled
+  
+  renderTimeoutId = setTimeout(() => {
     const sections = {
       'cuentas': ['section-cuentas-bar', () => renderCuentasBar() + (showMesaSelector ? renderMesaSelector() : '')],
       'wizard': ['section-wizard', renderWizard],
       'panel': ['section-right-panel', renderRightPanel]
     };
 
-    if (section && sections[section]) {
-      const [id, func] = sections[section];
-      const el = document.getElementById(id);
-      if (el) el.innerHTML = func();
-    } else {
+    if (pendingRenders.has('__full__')) {
+      // Full rerender - preserve bottom sheet state
+      const wasSheetOpen = document.querySelector('.right-panel')?.classList.contains('bottom-sheet-active');
       const container = document.getElementById('page-container');
       if (container) container.innerHTML = render();
+      if (wasSheetOpen) {
+        document.querySelector('.right-panel')?.classList.add('bottom-sheet-active');
+      }
+    } else {
+      // Render each pending section independently
+      for (const sec of pendingRenders) {
+        if (sections[sec]) {
+          const [id, func] = sections[sec];
+          const el = document.getElementById(id);
+          if (el) {
+            const wasOpen = el.classList.contains('bottom-sheet-active');
+            el.innerHTML = func();
+            if (wasOpen) el.classList.add('bottom-sheet-active');
+          }
+        }
+      }
+      // Update FAB if panel was rendered
+      if (pendingRenders.has('panel')) {
+        const fabWrapper = document.getElementById('section-mobile-fab');
+        if (fabWrapper) fabWrapper.innerHTML = renderMobileFab();
+      }
     }
-    renderTimeout = null;
-  });
+    
+    pendingRenders.clear();
+    renderTimeoutId = null;
+  }, 0);
 }
 
 function handlePosActions(e) {
@@ -544,6 +611,7 @@ function handlePosActions(e) {
         return;
       }
       showMesaSelector = true;
+      resetWizard(); // Ensure clean start
       rerender('cuentas');
       break;
 
@@ -559,6 +627,7 @@ function handlePosActions(e) {
 
     case 'select-cuenta':
       activeCuentaId = target.dataset.id;
+      resetWizard(); // Reset wizard when switching accounts
       rerender();
       break;
 
@@ -648,9 +717,7 @@ function handlePosActions(e) {
       break;
 
     case 'wizard-go-home':
-      wizardStep = 'categories';
-      wizardCategory = null;
-      configuringProduct = null;
+      resetWizard();
       rerender('wizard');
       break;
 
@@ -672,13 +739,15 @@ function handlePosActions(e) {
       db.removeItemFromCuenta(activeCuentaId, target.dataset.id).then(() => rerender('panel'));
       break;
 
+    case 'delete-item-full':
+      db.deleteItemFromCuenta(activeCuentaId, target.dataset.id).then(() => rerender('panel'));
+      break;
+
     case 'enviar-cocina':
       db.enviarACocina(activeCuentaId).then(() => {
         window.showToast('👨‍🍳 Enviado', 'success');
         if (wizardStep === 'success') {
-          wizardStep = 'categories';
-          wizardCategory = null;
-          configuringProduct = null;
+          resetWizard();
           rerender('wizard');
         }
       });
@@ -692,8 +761,45 @@ function handlePosActions(e) {
       cancelarCuentaActual();
       break;
 
+    case 'toggle-sidebar':
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar) {
+        sidebar.classList.toggle('mobile-active');
+        let overlay = document.getElementById('mobile-overlay');
+        if (!overlay) {
+           overlay = document.createElement('div');
+           overlay.id = 'mobile-overlay';
+           overlay.className = 'mobile-overlay';
+           document.body.appendChild(overlay);
+        }
+        overlay.onclick = () => {
+          sidebar.classList.remove('mobile-active');
+          document.querySelector('.right-panel')?.classList.remove('bottom-sheet-active');
+          overlay.classList.remove('active');
+        };
+        overlay.classList.toggle('active', sidebar.classList.contains('mobile-active') || document.querySelector('.right-panel')?.classList.contains('bottom-sheet-active'));
+      }
+      break;
+
     case 'toggle-mobile-ticket':
-      document.querySelector('.right-panel')?.classList.toggle('bottom-sheet-active');
+      const rp = document.querySelector('.right-panel');
+      if (rp) {
+        rp.classList.toggle('bottom-sheet-active');
+        let overlay = document.getElementById('mobile-overlay');
+        if (!overlay) {
+           overlay = document.createElement('div');
+           overlay.id = 'mobile-overlay';
+           overlay.className = 'mobile-overlay';
+           document.body.appendChild(overlay);
+        }
+        overlay.onclick = () => {
+          document.getElementById('sidebar')?.classList.remove('mobile-active');
+          rp.classList.remove('bottom-sheet-active');
+          overlay.classList.remove('active');
+        };
+        const isActive = rp.classList.contains('bottom-sheet-active') || document.getElementById('sidebar')?.classList.contains('mobile-active');
+        overlay.classList.toggle('active', isActive);
+      }
       break;
   }
 }
@@ -725,7 +831,14 @@ async function cancelarCuentaActual() {
   if (ok) {
     await db.cancelarCuenta(activeCuentaId);
     activeCuentaId = null;
+    
+    // Reset wizard and close bottom sheet
+    resetWizard();
+    document.querySelector('.right-panel')?.classList.remove('bottom-sheet-active');
+    document.getElementById('mobile-overlay')?.classList.remove('active');
+    
     rerender();
+    window.showToast('🗑️ Cuenta cancelada', 'info');
   }
 }
 
@@ -742,6 +855,12 @@ export async function handlePayment(method) {
   if (c) {
     activeCuentaId = null;
     document.getElementById('payment-modal').style.display = 'none';
+    
+    // Explicitly close bottom sheet and reset wizard
+    document.querySelector('.right-panel')?.classList.remove('bottom-sheet-active');
+    document.getElementById('mobile-overlay')?.classList.remove('active');
+    resetWizard();
+    
     rerender();
     window.showToast(`✅ Cobrado: ${formatCurrency(c.total)}`, 'success');
   }
@@ -756,7 +875,7 @@ export function init() {
     
     // DB Listeners added ONLY ONCE
     db.on('sale-added', () => rerender('panel'));
-    db.on('cuentas-changed', () => rerender());
+    db.on('cuentas-changed', () => rerender()); // Full rerender needed for cross-device sync (new mesas, etc.)
     db.on('products-changed', () => rerender('products'));
     
     isListenersAttached = true;
