@@ -61,6 +61,7 @@ export function getOpcionesColeccion() {
 
 export function initOpciones() {
   const existing = getCollection(DB_KEYS.OPCIONES);
+  // Solo cargamos defaults si está vacío.
   if (existing.length === 0) {
     let _id = 1;
     const initial = [];
@@ -85,28 +86,51 @@ export function updateOpcion(id, updates) {
   const idx = ops.findIndex(o => o.id === Number(id));
   if (idx !== -1) {
     ops[idx] = { ...ops[idx], ...updates };
+    
+    // Shadow write (local)
     saveCollection(DB_KEYS.OPCIONES, ops);
     emit('opciones-changed', ops);
+    
+    // Cloud update
+    updateDoc(doc(firestore, 'opciones', id.toString()), updates).catch(err => {
+      console.error("Error al actualizar opción en Firestore:", err);
+    });
   }
 }
 
 export function addOpcion(opcion) {
   const ops = getCollection(DB_KEYS.OPCIONES);
+  const id = ops.length > 0 ? Math.max(...ops.map(o => o.id)) + 1 : 1;
   const newOp = {
     ...opcion,
-    id: ops.length > 0 ? Math.max(...ops.map(o => o.id)) + 1 : 1,
+    id,
   };
+  
+  // Shadow write (local)
   ops.push(newOp);
   saveCollection(DB_KEYS.OPCIONES, ops);
   emit('opciones-changed', ops);
+  
+  // Cloud write
+  setDoc(doc(firestore, 'opciones', id.toString()), newOp).catch(err => {
+    console.error("Error al subir opción a Firestore:", err);
+  });
+
   return newOp;
 }
 
 export function deleteOpcion(id) {
   let ops = getCollection(DB_KEYS.OPCIONES);
   ops = ops.filter(o => o.id !== Number(id));
+  
+  // Shadow write (local)
   saveCollection(DB_KEYS.OPCIONES, ops);
   emit('opciones-changed', ops);
+  
+  // Cloud delete
+  deleteDoc(doc(firestore, 'opciones', id.toString())).catch(err => {
+    console.error("Error al eliminar opción de Firestore:", err);
+  });
 }
 
 // Proxies for legacy arrays
@@ -371,6 +395,27 @@ export function startCloudSync() {
     }
   }, (error) => {
     console.error('❌ Firestore Productos Sync Error:', error);
+  });
+
+  // Sync Opciones (Flavors, Toppings, Extras)
+  onSnapshot(collection(firestore, 'opciones'), (snapshot) => {
+    console.log(`🔄 Firestore Sync: Received ${snapshot.docs.length} opciones`);
+    if (snapshot.docs.length > 0) {
+      const ops = snapshot.docs.map(doc => ({ id: Number(doc.id), ...doc.data() }));
+      saveCollection(DB_KEYS.OPCIONES, ops);
+      emit('opciones-changed', ops);
+    } else {
+      // Seed if cloud is empty
+      const localOps = getCollection(DB_KEYS.OPCIONES);
+      if (localOps.length > 0) {
+        console.log("📤 Subiendo opciones locales a la nube como semilla...");
+        localOps.forEach(o => {
+          setDoc(doc(firestore, 'opciones', o.id.toString()), o).catch(console.error);
+        });
+      }
+    }
+  }, (error) => {
+    console.error('❌ Firestore Opciones Sync Error:', error);
   });
 
   isSynced = true;
