@@ -164,7 +164,7 @@ function renderCuentasBar() {
 
 const categoryIcons = {
   'WAFFLES': '🧇', 'TULIPANES': '🍧', 'COPAS': '🍨', 'POSTRES': '🍰',
-  'TORTAS HELADAS': '🎂', 'BEBIDAS': '🥤', 'PROMOCIONES': '🏷️', 'Favoritos': '⭐'
+  'TORTAS HELADAS': '🎂', 'BEBIDAS': '🥤', 'PROMOCIONES': '🏷️'
 };
 
 const categoryColors = {
@@ -214,8 +214,7 @@ function renderWizardHeader(title, subtitle, stepIdx, totalSteps) {
 
 function renderWizardCategories() {
   const products = db.getActiveProducts();
-  const categoriasSet = new Set(products.map(p => p.categoria));
-  const categories = ['Favoritos', ...Array.from(categoriasSet)];
+  const categories = Array.from(new Set(products.map(p => p.categoria)));
 
   return `
     <div class="wizard-main">
@@ -236,9 +235,7 @@ function renderWizardCategories() {
 
 function renderWizardProducts() {
   const products = db.getActiveProducts();
-  let displayProducts = wizardCategory === 'Favoritos' 
-    ? products.filter(p => ['Soft', 'Cono', 'Bubble Waffle', 'Milk Shake'].includes(p.nombre)).concat(products.slice(0, 8)).slice(0,8)
-    : products.filter(p => p.categoria === wizardCategory);
+  let displayProducts = products.filter(p => p.categoria === wizardCategory);
 
   return `
     <div class="wizard-main">
