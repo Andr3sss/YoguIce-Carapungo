@@ -54,7 +54,7 @@ function advanceWizardStep() {
     addCurrentWizardProduct();
     return;
   }
-  
+
   if (wizardStep === 'products') {
     if (p.opciones.sabores?.max > 0) wizardStep = 'sabores';
     else if (p.opciones.coberturas?.max > 0) wizardStep = 'coberturas';
@@ -72,7 +72,7 @@ function advanceWizardStep() {
   } else if (wizardStep === 'extras_notas') {
     addCurrentWizardProduct();
   }
-  
+
   currentModifier = 'normal';
   rerender('wizard');
 }
@@ -98,7 +98,7 @@ function goWizardBack() {
     else if (p.opciones.sabores?.max > 0) wizardStep = 'sabores';
     else { wizardStep = 'products'; configuringProduct = null; }
   }
-  
+
   currentModifier = 'normal';
   rerender('wizard');
 }
@@ -106,19 +106,19 @@ function goWizardBack() {
 function addCurrentWizardProduct() {
   const p = configuringProduct;
   const config = {
-      variante: selectedVariant,
-      sabores: [...selectedSabores],
-      coberturas: [...selectedCoberturas],
-      toppings: [...selectedToppings],
-      extras: [...selectedExtras].map(en => db.EXTRAS.find(ex => ex.nombre === en)).filter(Boolean),
-      notas: [...selectedNotas]
+    variante: selectedVariant,
+    sabores: [...selectedSabores],
+    coberturas: [...selectedCoberturas],
+    toppings: [...selectedToppings],
+    extras: [...selectedExtras].map(en => db.EXTRAS.find(ex => ex.nombre === en)).filter(Boolean),
+    notas: [...selectedNotas]
   };
-  lastAddedConfigId = p.id; 
+  lastAddedConfigId = p.id;
   db.addItemToCuenta(activeCuentaId, p, config).then(() => {
-      wizardStep = 'success';
-      rerender('wizard');
-      rerender('panel');
-      setTimeout(() => { lastAddedConfigId = null; rerender('panel'); }, 700);
+    wizardStep = 'success';
+    rerender('wizard');
+    rerender('panel');
+    setTimeout(() => { lastAddedConfigId = null; rerender('panel'); }, 700);
   });
 }
 
@@ -164,7 +164,7 @@ function renderCuentasBar() {
 
 const categoryIcons = {
   'WAFFLES': '🧇', 'TULIPANES': '🍧', 'COPAS': '🍨', 'POSTRES': '🍰',
-  'TORTAS HELADAS': '🎂', 'BEBIDAS': '🥤', 'PROMOCIONES': '🏷️'
+  'TORTAS HELADAS': '🎂', 'BEBIDAS': '🥤', 'PROMOCIONES': '🏷️', 'HELADOS': '🍦', 'BANANA SPLIT': '🍌'
 };
 
 const categoryColors = {
@@ -196,10 +196,10 @@ function renderWizard() {
 }
 
 function renderWizardHeader(title, subtitle, stepIdx, totalSteps) {
-  const dots = Array.from({length: totalSteps}).map((_, i) => 
+  const dots = Array.from({ length: totalSteps }).map((_, i) =>
     `<div class="wizard-step-dot ${i === stepIdx ? 'active' : (i < stepIdx ? 'completed' : '')}"></div>`
   ).join('');
-  
+
   return `
     <div class="wizard-header">
       ${wizardStep !== 'categories' && wizardStep !== 'success' ? `<button class="wizard-back-btn" data-action="wizard-back">←</button>` : `<div style="width:40px"></div>`}
@@ -257,12 +257,12 @@ function renderWizardProducts() {
 
 function renderWizardOptions(tipo) {
   const p = configuringProduct;
-  const optConfig = p.opciones?.[tipo] || {min:0, max:0};
+  const optConfig = p.opciones?.[tipo] || { min: 0, max: 0 };
   const list = tipo === 'sabores' ? db.SABORES_HELADO : (tipo === 'coberturas' ? db.COBERTURAS_LIQUIDAS : db.TOPPINGS);
   const selectedSet = tipo === 'sabores' ? selectedSabores : (tipo === 'coberturas' ? selectedCoberturas : selectedToppings);
   const title = tipo.charAt(0).toUpperCase() + tipo.slice(1);
   const stepIdx = tipo === 'sabores' ? 2 : (tipo === 'coberturas' ? 3 : 4);
-  
+
   const reachedMax = selectedSet.size >= optConfig.max;
   const reachedMin = selectedSet.size >= optConfig.min;
 
@@ -281,16 +281,16 @@ function renderWizardOptions(tipo) {
 
         <div class="wizard-opt-grid">
           ${list.map(item => {
-            const hasIt = selectedSet.has(item) || selectedSet.has('Sin '+item) || selectedSet.has(item+' (Extra)') || selectedSet.has(item+' (Aparte)') || selectedSet.has('Poco '+item);
-            return `
-              <button class="wizard-opt-btn ${hasIt ? 'opt-selected' : ''} ${getOptionColorClass(tipo.substring(0,tipo.length-1), item)}" data-action="wizard-toggle-opt" data-tipo="${tipo}" data-val="${item}">
+    const hasIt = selectedSet.has(item) || selectedSet.has('Sin ' + item) || selectedSet.has(item + ' (Extra)') || selectedSet.has(item + ' (Aparte)') || selectedSet.has('Poco ' + item);
+    return `
+              <button class="wizard-opt-btn ${hasIt ? 'opt-selected' : ''} ${getOptionColorClass(tipo.substring(0, tipo.length - 1), item)}" data-action="wizard-toggle-opt" data-tipo="${tipo}" data-val="${item}">
                 ${item}
               </button>
             `;
-          }).join('')}
+  }).join('')}
           ${reachedMax ? `
             <button class="wizard-opt-btn opt-extra" data-action="wizard-add-extra-opt" data-tipo="${tipo}">
-              ➕ ${title.substring(0,title.length-1)} Extra (+$0.20)
+              ➕ ${title.substring(0, title.length - 1)} Extra (+$0.20)
             </button>
           ` : ''}
         </div>
@@ -368,7 +368,7 @@ function renderWizardSuccess() {
 function renderWizardReview() {
   const cuenta = activeCuentaId ? db.getCuentaById(activeCuentaId) : null;
   if (!cuenta) return '';
-  
+
   return `
     <div class="wizard-main">
       ${renderWizardHeader('Resumen del Pedido', 'Revisa con el cliente antes de enviar', 5, 5)}
@@ -475,8 +475,8 @@ function renderCuentaDetail(cuenta) {
             <p>Toca un producto para agregarlo</p>
           </div>
         ` : cuenta.items.map(item => {
-          const isJustAdded = lastAddedConfigId && (item.configId === lastAddedConfigId || item.producto_id === lastAddedConfigId);
-          return `
+    const isJustAdded = lastAddedConfigId && (item.configId === lastAddedConfigId || item.producto_id === lastAddedConfigId);
+    return `
           <div class="cuenta-item ${isJustAdded ? 'just-added' : ''}">
             <div class="cuenta-item-info">
               <span class="cuenta-item-emoji">${item.emoji}</span>
@@ -522,9 +522,9 @@ function renderMesaSelector() {
       <h4>🍽️ Seleccionar Mesa</h4>
       <div class="mesa-popover-grid">
         ${mesas.map(m => {
-          const occ = mesasOcupadas.includes(m) || mesasOcupadas.includes(m.toString());
-          return `<button class="mesa-select-btn ${occ ? 'occupied' : ''}" data-action="select-mesa" data-val="${m}">${m}${occ?'<div style="font-size:8px">OCUPADA</div>':''}</button>`;
-        }).join('')}
+    const occ = mesasOcupadas.includes(m) || mesasOcupadas.includes(m.toString());
+    return `<button class="mesa-select-btn ${occ ? 'occupied' : ''}" data-action="select-mesa" data-val="${m}">${m}${occ ? '<div style="font-size:8px">OCUPADA</div>' : ''}</button>`;
+  }).join('')}
         <button class="mesa-select-btn" data-action="select-mesa" data-val="LLEVAR" style="color:var(--accent-mint)">🥡 LLEVAR</button>
       </div>
     </div>
@@ -552,9 +552,9 @@ function rerender(section = null) {
     pendingRenders.clear();
     pendingRenders.add('__full__');
   }
-  
+
   if (renderTimeoutId) return; // Already scheduled
-  
+
   renderTimeoutId = setTimeout(() => {
     const sections = {
       'cuentas': ['section-cuentas-bar', () => renderCuentasBar() + (showMesaSelector ? renderMesaSelector() : '')],
@@ -589,7 +589,7 @@ function rerender(section = null) {
         if (fabWrapper) fabWrapper.innerHTML = renderMobileFab();
       }
     }
-    
+
     pendingRenders.clear();
     renderTimeoutId = null;
   }, 0);
@@ -638,11 +638,11 @@ function handlePosActions(e) {
       if (!activeCuentaId) return window.showToast('⚠️ Selecciona cuenta', 'error');
       const pId = target.dataset.id;
       const p = db.getProductById(pId);
-      
+
       configuringProduct = p;
       selectedVariant = p.variantes?.[0] || null;
       selectedSabores.clear(); selectedCoberturas.clear(); selectedToppings.clear(); selectedExtras.clear(); selectedNotas.clear();
-      
+
       if (!p.opciones && !p.variantes?.length) {
         addCurrentWizardProduct();
       } else {
@@ -665,15 +665,15 @@ function handlePosActions(e) {
     case 'wizard-toggle-opt':
       const tipoOpt = target.dataset.tipo; // sabores, coberturas, toppings
       const baseOptVal = target.dataset.val;
-      
+
       let finalVal = baseOptVal;
       if (currentModifier === 'sin') finalVal = `Sin ${baseOptVal}`;
       if (currentModifier === 'extra') finalVal = `${baseOptVal} (Extra)`;
       if (currentModifier === 'aparte') finalVal = `${baseOptVal} (Aparte)`;
-      if (currentModifier === 'poco') finalVal = tipoOpt==='coberturas' ? `Poca ${baseOptVal}` : `Poco ${baseOptVal}`;
+      if (currentModifier === 'poco') finalVal = tipoOpt === 'coberturas' ? `Poca ${baseOptVal}` : `Poco ${baseOptVal}`;
 
       let theSet = tipoOpt === 'sabores' ? selectedSabores : (tipoOpt === 'coberturas' ? selectedCoberturas : selectedToppings);
-      
+
       // Toggle logic
       let found = false;
       for (let item of theSet) {
@@ -683,9 +683,9 @@ function handlePosActions(e) {
         }
       }
       if (!found) theSet.add(finalVal);
-      
+
       rerender('wizard');
-      
+
       // Auto-advance
       if (!found && currentModifier === 'normal') {
         const optMax = configuringProduct.opciones[tipoOpt]?.max;
@@ -764,10 +764,10 @@ function handlePosActions(e) {
         sidebar.classList.toggle('mobile-active');
         let overlay = document.getElementById('mobile-overlay');
         if (!overlay) {
-           overlay = document.createElement('div');
-           overlay.id = 'mobile-overlay';
-           overlay.className = 'mobile-overlay';
-           document.body.appendChild(overlay);
+          overlay = document.createElement('div');
+          overlay.id = 'mobile-overlay';
+          overlay.className = 'mobile-overlay';
+          document.body.appendChild(overlay);
         }
         overlay.onclick = () => {
           sidebar.classList.remove('mobile-active');
@@ -784,10 +784,10 @@ function handlePosActions(e) {
         rp.classList.toggle('bottom-sheet-active');
         let overlay = document.getElementById('mobile-overlay');
         if (!overlay) {
-           overlay = document.createElement('div');
-           overlay.id = 'mobile-overlay';
-           overlay.className = 'mobile-overlay';
-           document.body.appendChild(overlay);
+          overlay = document.createElement('div');
+          overlay.id = 'mobile-overlay';
+          overlay.className = 'mobile-overlay';
+          document.body.appendChild(overlay);
         }
         overlay.onclick = () => {
           document.getElementById('sidebar')?.classList.remove('mobile-active');
@@ -828,12 +828,12 @@ async function cancelarCuentaActual() {
   if (ok) {
     await db.cancelarCuenta(activeCuentaId);
     activeCuentaId = null;
-    
+
     // Reset wizard and close bottom sheet
     resetWizard();
     document.querySelector('.right-panel')?.classList.remove('bottom-sheet-active');
     document.getElementById('mobile-overlay')?.classList.remove('active');
-    
+
     rerender();
     window.showToast('🗑️ Cuenta cancelada', 'info');
   }
@@ -852,12 +852,12 @@ export async function handlePayment(method) {
   if (c) {
     activeCuentaId = null;
     document.getElementById('payment-modal').style.display = 'none';
-    
+
     // Explicitly close bottom sheet and reset wizard
     document.querySelector('.right-panel')?.classList.remove('bottom-sheet-active');
     document.getElementById('mobile-overlay')?.classList.remove('active');
     resetWizard();
-    
+
     rerender();
     window.showToast(`✅ Cobrado: ${formatCurrency(c.total)}`, 'success');
   }
@@ -869,12 +869,12 @@ export function init() {
   if (!isListenersAttached) {
     const container = document.getElementById('page-container');
     container.addEventListener('click', handlePosActions);
-    
+
     // DB Listeners added ONLY ONCE
     db.on('sale-added', () => rerender('panel'));
     db.on('cuentas-changed', () => rerender()); // Full rerender needed for cross-device sync (new mesas, etc.)
     db.on('products-changed', () => rerender('products'));
-    
+
     isListenersAttached = true;
   }
 }

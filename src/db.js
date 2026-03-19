@@ -14,6 +14,7 @@ const DB_KEYS = {
   COCINA: 'heladeria_cocina',
   GASTOS: 'heladeria_gastos',
   OPCIONES: 'heladeria_opciones',
+  USUARIOS: 'heladeria_usuarios',
 };
 
 const DB_VERSION = 1;
@@ -312,6 +313,7 @@ const shadowStore = {
   gastos: [],
   productos: [],
   categorias: [],
+  usuarios: [],
 };
 
 let isSynced = false;
@@ -416,6 +418,27 @@ export function startCloudSync() {
     }
   }, (error) => {
     console.error('❌ Firestore Opciones Sync Error:', error);
+  });
+
+  // Sync Usuarios
+  onSnapshot(collection(firestore, 'usuarios'), (snapshot) => {
+    console.log(`🔄 Firestore Sync: Received ${snapshot.docs.length} usuarios`);
+    if (snapshot.docs.length > 0) {
+      shadowStore.usuarios = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      saveCollection(DB_KEYS.USUARIOS, shadowStore.usuarios);
+      emit('users-changed', shadowStore.usuarios);
+    } else {
+      // Seed if cloud is empty
+      const localUsers = getCollection(DB_KEYS.USUARIOS);
+      if (localUsers.length > 0) {
+        console.log("📤 Subiendo usuarios locales a la nube como semilla...");
+        localUsers.forEach(u => {
+          setDoc(doc(firestore, 'usuarios', u.id.toString()), u).catch(console.error);
+        });
+      }
+    }
+  }, (error) => {
+    console.error('❌ Firestore Usuarios Sync Error:', error);
   });
 
   isSynced = true;
@@ -1222,6 +1245,7 @@ export function initDB() {
   initOpciones();
   initCategories();
   initProducts();
+  initUsers();
   startCloudSync();
 }
 
@@ -1474,5 +1498,64 @@ export async function getGlobalGastos(startDate = null, endDate = null) {
 
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => doc.data());
+}
+
+// ========================================
+// 👤 Usuarios & Auth CRUD
+// ========================================
+
+export function getUsuarios() {
+  return getCollection(DB_KEYS.USUARIOS);
+}
+
+export function initUsers() {
+  const existing = getCollection(DB_KEYS.USUARIOS);
+  if (existing.length === 0) {
+    const defaults = [
+      { id: 'u1', nombre: 'GERENTE', rol: 'jefe', pin: '112233', activo: true },
+      { id: 'u2', nombre: 'MESERO 1', rol: 'mesero', pin: '445566', activo: true },
+      { id: 'u3', nombre: 'DESARROLLADOR', rol: 'desarrollador', pin: '998877', activo: true }
+    ];
+    saveCollection(DB_KEYS.USUARIOS, defaults);
+    return defaults;
+  }
+  return existing;
+}
+
+export function getUserByPIN(pin) {
+  const users = getUsuarios();
+  return users.find(u => u.pin === pin && u.activo) || null;
+}
+
+/**
+ * Updates a user's pin (Developer only)
+ */
+export async function updateUserPIN(userId, newPin) {
+  const users = getUsuarios();
+  const index = users.findIndex(u => u.id === userId);
+  if (index === -1) return null;
+  
+  users[index].pin = newPin;
+  saveCollection(DB_KEYS.USUARIOS, users);
+  
+  await updateDoc(doc(firestore, 'usuarios', userId), { pin: newPin });
+  emit('users-changed', users);
+  return users[index];
+}
+
+let currentUser = JSON.parse(localStorage.getItem('heladeria_current_user') || 'null');
+
+export function getCurrentUser() {
+  return currentUser;
+}
+
+export function setCurrentUser(user) {
+  currentUser = user;
+  if (user) {
+    localStorage.setItem('heladeria_current_user', JSON.stringify(user));
+  } else {
+    localStorage.removeItem('heladeria_current_user');
+  }
+  emit('user-logged-in', user);
 }
 

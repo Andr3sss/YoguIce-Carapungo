@@ -2,7 +2,8 @@
 // 🍦 Heladería POS - Main Entry Point
 // ========================================
 
-import { initDB, on, isDiaAbierto, getAperturaHoy } from './db.js';
+import * as db from './db.js';
+const { initDB, on, isDiaAbierto, getAperturaHoy } = db;
 
 // Import modules
 import * as ventas from './modules/ventas.js';
@@ -13,6 +14,7 @@ import * as productos from './modules/productos.js';
 import * as estadisticas from './modules/estadisticas.js';
 import * as cocina from './modules/cocina.js';
 import * as gastos from './modules/gastos.js';
+import * as auth from './modules/auth.js';
 
 // ========================================
 // Helpers (exported for modules)
@@ -175,6 +177,53 @@ function navigateTo(page) {
   });
 }
 
+function checkPermissions() {
+  const user = db.getCurrentUser();
+  if (!user) return;
+
+  const role = user.rol; // jefe, mesero, desarrollador
+  const navButtons = document.querySelectorAll('.nav-btn');
+
+  navButtons.forEach(btn => {
+    const page = btn.dataset.page;
+    let allowed = true;
+
+    if (role === 'mesero') {
+      // Mesero only has access to Ventas and Cocina
+      if (page !== 'ventas' && page !== 'cocina') {
+        allowed = false;
+      }
+    }
+
+    if (!allowed) {
+      btn.style.display = 'none';
+    } else {
+      btn.style.display = 'flex';
+    }
+  });
+
+  // Render user info in sidebar
+  const userContainer = document.getElementById('user-info-container');
+  if (userContainer) {
+    userContainer.innerHTML = `
+      <div class="sidebar-user-info">
+        <div class="user-avatar">${user.nombre.charAt(0)}</div>
+        <div class="user-details">
+          <h4>${user.nombre}</h4>
+          <p>${user.rol}</p>
+        </div>
+      </div>
+      <div class="logout-btn-container">
+        <button class="btn-logout" id="logout-btn">
+          <span>🚪</span> Cerrar Sesión
+        </button>
+      </div>
+    `;
+
+    document.getElementById('logout-btn').addEventListener('click', auth.logout);
+  }
+}
+
 // Expose globally for modules
 window.navigateTo = navigateTo;
 
@@ -248,7 +297,7 @@ function setupPaymentModal() {
 
 function init() {
   // Initialize database
-  initDB();
+  db.initDB();
 
   // Setup navigation
   document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -267,10 +316,23 @@ function init() {
 
   // Apertura status
   updateAperturaStatus();
-  on('apertura-changed', updateAperturaStatus);
+  db.on('apertura-changed', updateAperturaStatus);
 
   // Navigate to default page
-  navigateTo('ventas');
+  const user = db.getCurrentUser();
+  if (!user) {
+    const container = document.getElementById('page-container');
+    container.innerHTML = auth.render();
+    auth.init();
+    // Hide sidebar content when not logged in
+    document.getElementById('sidebar').style.display = 'none';
+    document.getElementById('main-content').style.marginLeft = '0';
+    document.getElementById('main-content').style.width = '100%';
+  } else {
+    document.getElementById('sidebar').style.display = 'md' === 'xs' ? 'none' : 'flex'; // Reset sidebar
+    checkPermissions();
+    navigateTo('ventas');
+  }
 }
 
 // Start app when DOM is ready
