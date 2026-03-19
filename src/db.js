@@ -1366,31 +1366,88 @@ export async function enviarACocina(cuentaId) {
   if (!cuenta || cuenta.items.length === 0) return null;
 
   const pedidos = getCollection(DB_KEYS.COCINA);
-  const id = generateId();
   
-  const nuevoPedido = {
-    id,
-    cuentaId: cuenta.id,
-    mesaNumero: cuenta.numero,
-    timestamp: Date.now(),
-    estado: 'pendiente',
-    items: JSON.parse(JSON.stringify(cuenta.items))
-  };
+  // Buscar si ya existe un pedido activo para esta cuenta
+  const existingIndex = pedidos.findIndex(p => p.cuentaId === cuenta.id && p.estado !== 'listo');
+  
+  if (existingIndex !== -1) {
+    // Actualizar pedido existente
+    const pedido = pedidos[existingIndex];
+    
+    // Mapear items nuevos preservando el estado 'preparado' si ya existían
+    const nuevosItems = cuenta.items.map(newItem => {
+      // Intentamos encontrar el item anterior exacto por nombre y detalles para preservar su estado
+      const oldItem = pedido.items.find(oi => oi.nombre === newItem.nombre && oi.detalles === newItem.detalles);
+      return {
+        ...newItem,
+        preparado: oldItem ? !!oldItem.preparado : false
+      };
+    });
 
-  // Shadow write
-  pedidos.push(nuevoPedido);
-  saveCollection(DB_KEYS.COCINA, pedidos);
-  
-  // Cloud write
-  await setDoc(doc(firestore, 'cocina_kds', id), nuevoPedido);
-  
-  localStorage.setItem('kds_ping', Date.now().toString());
-  if (socket) {
-    socket.emit('sync-kds', { action: 'added', payload: nuevoPedido });
+    pedido.items = nuevosItems;
+    pedido.timestamp = Date.now();
+    
+    // Shadow write
+    saveCollection(DB_KEYS.COCINA, pedidos);
+    
+    // Cloud update
+    await updateDoc(doc(firestore, 'cocina_kds', pedido.id), {
+      items: pedido.items,
+      timestamp: pedido.timestamp,
+      mesa: cuenta.mesa // Asegurar que se actualice la mesa si cambia (aunque usualmente no cambia)
+    });
+    
+    localStorage.setItem('kds_ping', Date.now().toString());
+    emit('cocina-updated', pedido);
+    return pedido;
+  } else {
+    // Crear nuevo pedido
+    const id = generateId();
+    const nuevoPedido = {
+      id,
+      cuentaId: cuenta.id,
+      mesa: cuenta.mesa, // Número de mesa real
+      mesaNumero: cuenta.numero, // Correlativo del pedido
+      timestamp: Date.now(),
+      estado: 'pendiente',
+      items: cuenta.items.map(item => ({ ...item, preparado: false }))
+    };
+
+    // Shadow write
+    pedidos.push(nuevoPedido);
+    saveCollection(DB_KEYS.COCINA, pedidos);
+    
+    // Cloud write
+    await setDoc(doc(firestore, 'cocina_kds', id), nuevoPedido);
+    
+    localStorage.setItem('kds_ping', Date.now().toString());
+    emit('cocina-added', nuevoPedido);
+    return nuevoPedido;
   }
-  
-  emit('cocina-added', nuevoPedido);
-  return nuevoPedido;
+}
+
+export async function actualizarItemCocina(pedidoId, itemIndex, preparado) {
+  const pedidos = getCollection(DB_KEYS.COCINA);
+  const index = pedidos.findIndex(p => p.id === pedidoId);
+  if (index === -1) return null;
+
+  const pedido = pedidos[index];
+  if (pedido.items[itemIndex]) {
+    pedido.items[itemIndex].preparado = preparado;
+    
+    // Shadow write
+    saveCollection(DB_KEYS.COCINA, pedidos);
+    
+    // Cloud write
+    await updateDoc(doc(firestore, 'cocina_kds', pedidoId), {
+      items: pedido.items
+    });
+    
+    localStorage.setItem('kds_ping', Date.now().toString());
+    emit('cocina-updated', pedido);
+    return pedido;
+  }
+  return null;
 }
 
 export function getPedidosCocina() {

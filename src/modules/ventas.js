@@ -863,6 +863,11 @@ export async function handlePayment(method) {
   }
 }
 
+// --- Listeners ---
+const onSaleAdded = () => rerender('panel');
+const onCuentasChanged = () => rerender();
+const onProductsChanged = () => rerender('products');
+
 // --- Lifecycle ---
 
 export function init() {
@@ -870,15 +875,24 @@ export function init() {
     const container = document.getElementById('page-container');
     container.addEventListener('click', handlePosActions);
 
-    // DB Listeners added ONLY ONCE
-    db.on('sale-added', () => rerender('panel'));
-    db.on('cuentas-changed', () => rerender()); // Full rerender needed for cross-device sync (new mesas, etc.)
-    db.on('products-changed', () => rerender('products'));
+    // DB Listeners
+    db.on('sale-added', onSaleAdded);
+    db.on('cuentas-changed', onCuentasChanged);
+    db.on('products-changed', onProductsChanged);
 
     isListenersAttached = true;
   }
 }
 
 export function cleanup() {
-  // Not strictly needed with event delegation on page-container if container is destroyed
+  const container = document.getElementById('page-container');
+  if (container) {
+    container.removeEventListener('click', handlePosActions);
+  }
+
+  db.off('sale-added', onSaleAdded);
+  db.off('cuentas-changed', onCuentasChanged);
+  db.off('products-changed', onProductsChanged);
+
+  isListenersAttached = false;
 }
