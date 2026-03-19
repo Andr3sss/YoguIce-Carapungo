@@ -4108,6 +4108,13 @@ input:checked+.toggle-slider:before {
   border: 1px solid rgba(245, 158, 11, 0.2);
 }
 
+.kds-payment-badge.cancelled {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  animation: pulse-red 2s infinite;
+}
+
 /* Item checkmarks */
 .kds-item-check {
   display: flex;
@@ -4136,6 +4143,19 @@ input:checked+.toggle-slider:before {
 
 .kds-item.preparado {
   opacity: 0.5;
+}
+
+.kds-item.cancelled-line .kds-item-name,
+.kds-item.cancelled-line .kds-item-qty,
+.kds-item.cancelled-line .kds-item-options {
+  text-decoration: line-through;
+  opacity: 0.6;
+  color: #f87171;
+}
+
+.kds-card.estado-cancelado {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: linear-gradient(180deg, var(--bg-card) 0%, rgba(239, 68, 68, 0.05) 100%);
 }
 
 .kds-header-info {

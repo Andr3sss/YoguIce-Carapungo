@@ -27,7 +27,7 @@ export function render() {
   const stats = {
     pendientes: allPedidos.filter(p => p.estado === 'pendiente').length,
     preparando: allPedidos.filter(p => p.estado === 'en_preparacion').length,
-    total: allPedidos.filter(p => p.estado !== 'listo').length
+    total: allPedidos.filter(p => p.estado !== 'listo' && p.estado !== 'cancelado').length
   };
 
   return `
@@ -70,6 +70,7 @@ export function render() {
           ${pedidos.map(p => {
             const cuenta = getCuentaById(p.cuentaId);
             const isPaid = cuenta && cuenta.estado === 'cerrada';
+            const isCancelled = p.estado === 'cancelado';
             const mesaLabel = cuenta ? (cuenta.mesa || 'S/M') : (p.mesa || 'S/M');
             
             return `
@@ -79,8 +80,8 @@ export function render() {
                     <div class="kds-mesa-tag">MESA ${mesaLabel}</div>
                     <div class="kds-meta-row">
                       <span class="kds-pedido-id">Pedido: #${p.mesaNumero}</span>
-                      <span class="kds-payment-badge ${isPaid ? 'paid' : 'unpaid'}">
-                        ${isPaid ? '💰 PAGADO' : '⏳ PENDIENTE'}
+                      <span class="kds-payment-badge ${isCancelled ? 'cancelled' : isPaid ? 'paid' : 'unpaid'}">
+                        ${isCancelled ? '🚫 CANCELADO' : isPaid ? '💰 PAGADO' : '⏳ PENDIENTE'}
                       </span>
                     </div>
                   </div>
@@ -91,9 +92,9 @@ export function render() {
                 
                 <div class="kds-items">
                   ${p.items.map((item, idx) => `
-                    <div class="kds-item ${item.preparado ? 'preparado' : ''}">
+                    <div class="kds-item ${item.preparado ? 'preparado' : ''} ${isCancelled ? 'cancelled-line' : ''}">
                       <div class="kds-item-check ${item.preparado ? 'checked' : ''}" 
-                           data-id="${p.id}" data-idx="${idx}" data-action="toggle-item-prep">
+                           data-id="${p.id}" data-idx="${idx}" data-action="${isCancelled ? 'none' : 'toggle-item-prep'}">
                         ${item.preparado ? '✓' : ''}
                       </div>
                       <div class="kds-item-qty">${item.cantidad}</div>
@@ -113,6 +114,10 @@ export function render() {
                   ` : p.estado === 'en_preparacion' ? `
                     <button class="kds-btn kds-btn-finish btn-action-cocina" data-id="${p.id}" data-action="listo">
                       ✅ Marcar como Listo
+                    </button>
+                  ` : p.estado === 'cancelado' ? `
+                    <button class="kds-btn kds-btn-cancel-clear btn-action-cocina" data-id="${p.id}" data-action="listo" style="background: var(--danger); color: #fff;">
+                      🗑️ Quitar Tarjeta
                     </button>
                   ` : `
                     <div style="text-align:center; padding:10px; color:var(--text-muted); font-size:12px; font-weight:700;">

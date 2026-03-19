@@ -1476,6 +1476,24 @@ export async function actualizarEstadoCocina(pedidoId, nuevoEstado) {
   return null;
 }
 
+export async function cancelarPedidoCocina(cuentaId) {
+  const pedidos = getCollection(DB_KEYS.COCINA);
+  const kdsPedidos = pedidos.filter(p => p.cuentaId === cuentaId && p.estado !== 'listo');
+  
+  if (kdsPedidos.length > 0) {
+    for (const pedido of kdsPedidos) {
+      pedido.estado = 'cancelado';
+      await updateDoc(doc(firestore, 'cocina_kds', pedido.id), { estado: 'cancelado' });
+    }
+    
+    saveCollection(DB_KEYS.COCINA, pedidos);
+    localStorage.setItem('kds_ping', Date.now().toString());
+    emit('cocina-updated', kdsPedidos[0]); // Emitir para el primero es suficiente para disparar render
+    return true;
+  }
+  return false;
+}
+
 // ========================================
 // 💸 Gastos CRUD (New)
 // ========================================

@@ -826,6 +826,7 @@ async function cancelarCuentaActual() {
     confirmClass: 'btn-danger'
   });
   if (ok) {
+    await db.cancelarPedidoCocina(activeCuentaId);
     await db.cancelarCuenta(activeCuentaId);
     activeCuentaId = null;
 
