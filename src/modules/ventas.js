@@ -12,10 +12,10 @@ let wizardCategory = null;
 let configuringProduct = null;
 let showMesaSelector = false;
 let selectedVariant = null;
-let selectedSabores = new Set();
-let selectedCoberturas = new Set();
-let selectedToppings = new Set();
-let selectedExtras = new Set();
+let selectedSabores = [];
+let selectedCoberturas = [];
+let selectedToppings = [];
+let selectedExtras = new Set(); // Extras remain Set (typically checkbox-style)
 let selectedNotas = ''; // Free-text note for kitchen
 
 let currentModifier = 'normal';
@@ -23,7 +23,7 @@ let lastAddedConfigId = null;
 
 // Promo sub-product state
 let promoSubProduct = 0; // 0 = not in promo mode, 1 = configuring product 1, 2 = product 2, etc.
-let promoSelections = []; // Array of { sabores: Set, coberturas: Set, toppings: Set } per sub-product
+let promoSelections = []; // Array of { sabores: Array, coberturas: Array, toppings: Array } per sub-product
 
 let isListenersAttached = false;
 let pendingRenders = new Set();
@@ -45,9 +45,9 @@ function resetWizard() {
   wizardCategory = null;
   configuringProduct = null;
   selectedVariant = null;
-  selectedSabores.clear();
-  selectedCoberturas.clear();
-  selectedToppings.clear();
+  selectedSabores = [];
+  selectedCoberturas = [];
+  selectedToppings = [];
   selectedExtras.clear();
   selectedNotas = '';
   promoSubProduct = 0;
@@ -86,7 +86,7 @@ function advanceWizardStep() {
       // Enter promo mode: start sub-product 1
       promoSubProduct = 1;
       promoSelections = [];
-      selectedSabores.clear(); selectedCoberturas.clear(); selectedToppings.clear();
+      selectedSabores = []; selectedCoberturas = []; selectedToppings = [];
       const ppOpts = promo.perProduct;
       if (ppOpts.sabores?.max > 0) wizardStep = 'sabores';
       else if (ppOpts.coberturas?.max > 0) wizardStep = 'coberturas';
@@ -122,15 +122,15 @@ function advancePromoSubProduct() {
   const promo = configuringProduct.opciones.promo;
   // Save current sub-product selections
   promoSelections[promoSubProduct - 1] = {
-    sabores: new Set(selectedSabores),
-    coberturas: new Set(selectedCoberturas),
-    toppings: new Set(selectedToppings)
+    sabores: [...selectedSabores],
+    coberturas: [...selectedCoberturas],
+    toppings: [...selectedToppings]
   };
 
   if (promoSubProduct < promo.cantidad) {
     // Move to next sub-product
     promoSubProduct++;
-    selectedSabores.clear(); selectedCoberturas.clear(); selectedToppings.clear();
+    selectedSabores = []; selectedCoberturas = []; selectedToppings = [];
     const ppOpts = promo.perProduct;
     if (ppOpts.sabores?.max > 0) wizardStep = 'sabores';
     else if (ppOpts.coberturas?.max > 0) wizardStep = 'coberturas';
@@ -156,9 +156,9 @@ function goWizardBack() {
       // Go back to last step of previous sub-product
       promoSubProduct--;
       const prev = promoSelections[promoSubProduct - 1] || {};
-      selectedSabores = new Set(prev.sabores || []);
-      selectedCoberturas = new Set(prev.coberturas || []);
-      selectedToppings = new Set(prev.toppings || []);
+      selectedSabores = [...(prev.sabores || [])];
+      selectedCoberturas = [...(prev.coberturas || [])];
+      selectedToppings = [...(prev.toppings || [])];
       const ppOpts = getPromoPerProduct();
       if (ppOpts.toppings?.max > 0) wizardStep = 'toppings';
       else if (ppOpts.coberturas?.max > 0) wizardStep = 'coberturas';
@@ -174,9 +174,9 @@ function goWizardBack() {
     else if (isPromoProduct() && promoSubProduct > 1) {
       promoSubProduct--;
       const prev = promoSelections[promoSubProduct - 1] || {};
-      selectedSabores = new Set(prev.sabores || []);
-      selectedCoberturas = new Set(prev.coberturas || []);
-      selectedToppings = new Set(prev.toppings || []);
+      selectedSabores = [...(prev.sabores || [])];
+      selectedCoberturas = [...(prev.coberturas || [])];
+      selectedToppings = [...(prev.toppings || [])];
       const ppOpts = getPromoPerProduct();
       if (ppOpts.toppings?.max > 0) wizardStep = 'toppings';
       else if (ppOpts.coberturas?.max > 0) wizardStep = 'coberturas';
@@ -192,9 +192,9 @@ function goWizardBack() {
       const promo = p.opciones.promo;
       promoSubProduct = promo.cantidad;
       const prev = promoSelections[promoSubProduct - 1] || {};
-      selectedSabores = new Set(prev.sabores || []);
-      selectedCoberturas = new Set(prev.coberturas || []);
-      selectedToppings = new Set(prev.toppings || []);
+      selectedSabores = [...(prev.sabores || [])];
+      selectedCoberturas = [...(prev.coberturas || [])];
+      selectedToppings = [...(prev.toppings || [])];
       const ppOpts = getPromoPerProduct();
       if (ppOpts.toppings?.max > 0) wizardStep = 'toppings';
       else if (ppOpts.coberturas?.max > 0) wizardStep = 'coberturas';
@@ -219,9 +219,9 @@ function addCurrentWizardProduct() {
     // Save last sub-product selections if not yet saved
     if (promoSubProduct > 0 && !promoSelections[promoSubProduct - 1]) {
       promoSelections[promoSubProduct - 1] = {
-        sabores: new Set(selectedSabores),
-        coberturas: new Set(selectedCoberturas),
-        toppings: new Set(selectedToppings)
+        sabores: [...selectedSabores],
+        coberturas: [...selectedCoberturas],
+        toppings: [...selectedToppings]
       };
     }
 
@@ -233,9 +233,9 @@ function addCurrentWizardProduct() {
 
     promoSelections.forEach((sel, i) => {
       const label = `${promo.label || 'Producto'} ${i + 1}`;
-      if (sel.sabores?.size > 0) allSabores.push(`[${label}: ${[...sel.sabores].join(', ')}]`);
-      if (sel.coberturas?.size > 0) allCoberturas.push(`[${label}: ${[...sel.coberturas].join(', ')}]`);
-      if (sel.toppings?.size > 0) allToppings.push(`[${label}: ${[...sel.toppings].join(', ')}]`);
+      if (sel.sabores?.length > 0) allSabores.push(`[${label}: ${sel.sabores.join(', ')}]`);
+      if (sel.coberturas?.length > 0) allCoberturas.push(`[${label}: ${sel.coberturas.join(', ')}]`);
+      if (sel.toppings?.length > 0) allToppings.push(`[${label}: ${sel.toppings.join(', ')}]`);
     });
 
     config = {
@@ -403,12 +403,11 @@ function renderWizardOptions(tipo) {
   const isPromo = isPromoProduct() && promoSubProduct > 0;
   const optConfig = isPromo ? (getPromoPerProduct()[tipo] || { min: 0, max: 0 }) : (p.opciones?.[tipo] || { min: 0, max: 0 });
   const list = tipo === 'sabores' ? db.SABORES_HELADO : (tipo === 'coberturas' ? db.COBERTURAS_LIQUIDAS : db.TOPPINGS);
-  const selectedSet = tipo === 'sabores' ? selectedSabores : (tipo === 'coberturas' ? selectedCoberturas : selectedToppings);
+  const selectedArray = tipo === 'sabores' ? selectedSabores : (tipo === 'coberturas' ? selectedCoberturas : selectedToppings);
   const title = tipo.charAt(0).toUpperCase() + tipo.slice(1);
   const stepIdx = tipo === 'sabores' ? 2 : (tipo === 'coberturas' ? 3 : 4);
 
-  const reachedMax = selectedSet.size >= optConfig.max;
-  const reachedMin = selectedSet.size >= optConfig.min;
+  const reachedMin = selectedArray.length >= optConfig.min;
 
   const promoLabel = isPromo ? p.opciones.promo.label || 'Producto' : '';
   const promoTotal = isPromo ? p.opciones.promo.cantidad : 0;
@@ -417,7 +416,7 @@ function renderWizardOptions(tipo) {
     subtitleParts.push(`<span style="background:var(--accent-pink); color:#fff; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:800;">🏆 ${promoLabel} ${promoSubProduct} de ${promoTotal}</span>`);
   }
   subtitleParts.push(`<span style="color:var(--accent-mint); font-weight:700;">Para: ${p.nombre}</span>`);
-  subtitleParts.push(`Seleccionado: ${selectedSet.size} de ${optConfig.max} (Min: ${optConfig.min})`);
+  subtitleParts.push(`Seleccionado: ${selectedArray.length} (Incluidos: ${optConfig.max})`);
 
   return `
     <div class="wizard-main">
@@ -434,23 +433,22 @@ function renderWizardOptions(tipo) {
 
         <div class="wizard-opt-grid">
           ${list.map(item => {
-    const hasIt = selectedSet.has(item) || selectedSet.has('Sin ' + item) || selectedSet.has(item + ' (Extra)') || selectedSet.has(item + ' (Aparte)') || selectedSet.has('Poco ' + item);
+    // Count how many times this specific base item appears (with any modifier)
+    const count = selectedArray.filter(s => s === item || s.includes(item)).length;
+    const isSelected = count > 0;
+    
     return `
-              <button class="wizard-opt-btn ${hasIt ? 'opt-selected' : ''} ${getOptionColorClass(tipo.substring(0, tipo.length - 1), item)}" data-action="wizard-toggle-opt" data-tipo="${tipo}" data-val="${item}">
+              <button class="wizard-opt-btn ${isSelected ? 'opt-selected' : ''} ${getOptionColorClass(tipo.substring(0, tipo.length - 1), item)}" data-action="wizard-toggle-opt" data-tipo="${tipo}" data-val="${item}">
+                ${isSelected && currentModifier === 'normal' ? `<div class="opt-count-badge">x${count}</div>` : ''}
                 ${item}
               </button>
             `;
   }).join('')}
-          ${reachedMax ? `
-            <button class="wizard-opt-btn opt-extra" data-action="wizard-add-extra-opt" data-tipo="${tipo}">
-              ➕ ${title.substring(0, title.length - 1)} Extra (+$${db.getPrecioExtraPorTipo(tipo).toFixed(2)})
-            </button>
-          ` : ''}
         </div>
       </div>
       <div class="wizard-footer">
         <div class="wizard-summary-bar">
-          ${[...selectedSet].map(s => `<span class="wizard-sum-item">${s}</span>`).join('')}
+          ${selectedArray.map((s, idx) => `<span class="wizard-sum-item" data-action="wizard-remove-opt-item" data-tipo="${tipo}" data-index="${idx}" title="Click para eliminar">${s}</span>`).join('')}
         </div>
         <button class="btn btn-primary" ${!reachedMin ? 'disabled' : ''} data-action="wizard-next">Siguiente ➔</button>
       </div>
@@ -794,7 +792,7 @@ function handlePosActions(e) {
 
       configuringProduct = p;
       selectedVariant = p.variantes?.[0] || null;
-      selectedSabores.clear(); selectedCoberturas.clear(); selectedToppings.clear(); selectedExtras.clear(); selectedNotas = '';
+      selectedSabores = []; selectedCoberturas = []; selectedToppings = []; selectedExtras.clear(); selectedNotas = '';
 
       if (!p.opciones && !p.variantes?.length) {
         addCurrentWizardProduct();
@@ -828,27 +826,38 @@ function handlePosActions(e) {
       if (currentModifier === 'aparte') finalVal = `${baseOptVal} (Aparte)`;
       if (currentModifier === 'poco') finalVal = tipoOpt === 'coberturas' ? `Poca ${baseOptVal}` : `Poco ${baseOptVal}`;
 
-      let theSet = tipoOpt === 'sabores' ? selectedSabores : (tipoOpt === 'coberturas' ? selectedCoberturas : selectedToppings);
+      let theArray = tipoOpt === 'sabores' ? selectedSabores : (tipoOpt === 'coberturas' ? selectedCoberturas : selectedToppings);
 
-      // Toggle logic
-      let found = false;
-      for (let item of theSet) {
-        if (item.includes(baseOptVal)) {
-          theSet.delete(item);
-          found = true;
-        }
-      }
-      if (!found) {
-        // Enforce max limit: use per-product limits for promos
-        const effectiveOpts = getEffectiveOptions();
-        const optMax = effectiveOpts[tipoOpt]?.max || 0;
-        if (currentModifier === 'extra' || currentModifier === 'sin' || currentModifier === 'aparte' || currentModifier === 'poco' || theSet.size < optMax) {
-          theSet.add(finalVal);
+      // Enforce max limit: utilize per-product limits for promos
+      const effectiveOpts = getEffectiveOptions();
+      const optMax = effectiveOpts[tipoOpt]?.max || 0;
+
+      if (currentModifier === 'normal') {
+        // Normal mode: Repeated clicks ADD more UNLIMITED
+        // If already at cap, auto-convert to (Extra)
+        if (theArray.length < optMax) {
+          theArray.push(finalVal);
         } else {
-          window.showToast(`⚠️ Máximo ${optMax} ${tipoOpt} permitidos`, 'error');
+          theArray.push(`${baseOptVal} (Extra)`);
+        }
+      } else {
+        // Other modifiers: Toggle logic (if already there with SAME modifier, remove; otherwise add)
+        const idx = theArray.indexOf(finalVal);
+        if (idx !== -1) {
+          theArray.splice(idx, 1);
+        } else {
+          theArray.push(finalVal);
         }
       }
 
+      rerender('wizard');
+      break;
+
+    case 'wizard-remove-opt-item':
+      const rTipo = target.dataset.tipo;
+      const rIdx = parseInt(target.dataset.index);
+      let rArray = rTipo === 'sabores' ? selectedSabores : (rTipo === 'coberturas' ? selectedCoberturas : selectedToppings);
+      rArray.splice(rIdx, 1);
       rerender('wizard');
       break;
 

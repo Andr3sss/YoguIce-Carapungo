@@ -15,6 +15,7 @@ import * as estadisticas from './modules/estadisticas.js';
 import * as cocina from './modules/cocina.js';
 import * as gastos from './modules/gastos.js';
 import * as auth from './modules/auth.js';
+import { preloadSounds, playSound } from './modules/sounds.js';
 
 // ========================================
 // Helpers (exported for modules)
@@ -341,6 +342,13 @@ function init() {
   // Apertura status
   updateAperturaStatus();
   db.on('apertura-changed', updateAperturaStatus);
+
+  // 🔔 Sound notifications
+  preloadSounds();
+  db.on('cocina-added', () => playSound('new-order', true));       // Desktop only
+  db.on('cocina-updated', () => playSound('update-order', true));  // Desktop only
+  db.on('cuenta-cerrada', () => playSound('payment', false));      // All devices
+  db.on('cuenta-cancelada', () => playSound('cancel', true));      // Desktop only
 
   // Navigate to default page
   const user = db.getCurrentUser();
