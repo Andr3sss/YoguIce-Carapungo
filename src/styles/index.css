@@ -4678,4 +4678,246 @@ input:checked+.toggle-slider:before {
   color: var(--text-muted);
   padding: 40px 0;
   font-size: 14px;
-}
+}
+
+/* ========================================
+   💵 Cash Calculator Styles
+   ======================================== */
+
+#cash-calculator {
+  margin-top: var(--spacing-md);
+  animation: fadeIn 0.3s ease;
+}
+
+.calc-container {
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.calc-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.calc-label {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.calc-value.total {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.calc-input-wrapper {
+  position: relative;
+  flex: 1;
+  max-width: 180px;
+}
+
+.currency-prefix {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--accent-mint);
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.calc-input {
+  width: 100%;
+  background: var(--bg-card);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  padding: 12px 12px 12px 30px;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: right;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: textfield;
+}
+
+.calc-input:focus {
+  outline: none;
+  border-color: var(--accent-mint);
+  box-shadow: 0 0 15px rgba(52, 211, 153, 0.2);
+}
+
+/* Chrome, Safari, Edge, Opera */
+.calc-input::-webkit-outer-spin-button,
+.calc-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox */
+.calc-input[type=number] {
+  appearance: none;
+  -moz-appearance: textfield;
+}
+
+.calc-change-box {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 4px;
+}
+
+.calc-change-label {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.calc-change-amount {
+  font-size: 42px;
+  font-weight: 900;
+  color: var(--accent-mint);
+  text-shadow: 0 0 20px rgba(52, 211, 153, 0.3);
+}
+
+.calc-change-amount.insufficient {
+  color: var(--danger);
+  text-shadow: 0 0 20px rgba(248, 113, 113, 0.3);
+}
+
+.calc-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+}
+
+.calc-actions .btn {
+  flex: 1;
+}
+
+@media (max-width: 600px) {
+  .calc-change-amount {
+    font-size: 36px;
+  }
+}
+
+/* ========================================
+   📱 Deuna QR / Transfer Styles
+   ======================================== */
+
+#transfer-display {
+  margin-top: var(--spacing-md);
+  animation: fadeIn 0.3s ease;
+}
+
+.transfer-container {
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  align-items: center;
+}
+
+.deuna-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.deuna-logo {
+  background: #5F259F; /* Deuna Purple */
+  color: white;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 18px;
+}
+
+.deuna-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.qr-box {
+  background: white;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  margin: 10px 0;
+}
+
+.qr-img {
+  display: block;
+  width: 220px;
+  height: 220px;
+  object-fit: contain;
+}
+
+.acc-box {
+  text-align: center;
+  width: 100%;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-md);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.acc-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.acc-number {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--accent-mint);
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+
+.acc-bank {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .qr-img {
+    width: 180px;
+    height: 180px;
+  }
+  .acc-number {
+    font-size: 20px;
+  }
+}
+
+

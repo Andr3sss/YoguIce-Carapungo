@@ -1815,3 +1815,48 @@ export function setCurrentUser(user) {
   emit('user-logged-in', user);
 }
 
+// ========================================
+// 🧼 Production Prep: Reset Data
+// ========================================
+
+/**
+ * PURGE all testing data (Ventas, Jornadas, Cuentas, Cocina, Gastos)
+ * PRESERVES: Category, Products, Options, Insumos, Users.
+ */
+export async function resetToProduction() {
+  const collectionsToClear = ['ventas', 'jornadas', 'cuentas', 'cocina_kds', 'gastos'];
+  const localKeysToClear = [
+    DB_KEYS.VENTAS, 
+    DB_KEYS.APERTURAS, 
+    DB_KEYS.CUENTAS, 
+    DB_KEYS.COCINA, 
+    DB_KEYS.GASTOS, 
+    DB_KEYS.CIERRES
+  ];
+
+  console.log("🧹 Iniciando limpieza de base de datos...");
+
+  // 1. Clear Local Storage
+  localKeysToClear.forEach(key => localStorage.removeItem(key));
+
+  // 2. Clear Firestore Collections
+  for (const colName of collectionsToClear) {
+    try {
+      const qSnapshot = await getDocs(collection(firestore, colName));
+      const deletePromises = qSnapshot.docs.map(d => deleteDoc(d.ref));
+      await Promise.all(deletePromises);
+      console.log(`✅ Colección '${colName}' limpiada.`);
+    } catch (err) {
+      console.error(`❌ Error al limpiar colección '${colName}':`, err);
+    }
+  }
+
+  console.log("✨ Base de datos purgada. Reiniciando...");
+  
+  // 3. Clear memory and push notification
+  emit('database-reset', true);
+  
+  return true;
+}
+
+

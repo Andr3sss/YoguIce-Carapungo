@@ -213,7 +213,12 @@ function checkPermissions() {
           <p>${user.rol}</p>
         </div>
       </div>
-      <div class="logout-btn-container">
+      <div class="logout-btn-container" style="display:flex; flex-direction:column; gap:8px;">
+        ${user.rol === 'desarrollador' ? `
+          <button class="btn-logout" id="reset-db-btn" style="background:rgba(239, 68, 68, 0.1); color:var(--danger); border:1px solid rgba(239, 68, 68, 0.2);">
+            <span>🧹</span> Reseteo Producción
+          </button>
+        ` : ''}
         <button class="btn-logout" id="logout-btn">
           <span>🚪</span> Cerrar Sesión
         </button>
@@ -221,6 +226,25 @@ function checkPermissions() {
     `;
 
     document.getElementById('logout-btn').addEventListener('click', auth.logout);
+    
+    const resetBtn = document.getElementById('reset-db-btn');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', async () => {
+        const ok = await window.showConfirm({
+          title: '⚠️ ¿BORRAR TODO EL HISTORIAL?',
+          message: 'Esta acción borrará todas las ventas, cierres y gastos de prueba. <strong>Los productos y suministros se mantendrán.</strong>',
+          confirmText: 'SÍ, LIMPIAR TODO',
+          confirmClass: 'btn-danger'
+        });
+
+        if (ok) {
+          window.showToast('🧹 Limpiando base de datos...', 'info');
+          await db.resetToProduction();
+          window.showToast('✨ Sistema listo para producción', 'success');
+          setTimeout(() => window.location.reload(), 1500);
+        }
+      });
+    }
   }
 }
 

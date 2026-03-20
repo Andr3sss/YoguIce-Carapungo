@@ -997,11 +997,119 @@ function openPaymentModal(cuenta) {
   const modal = document.getElementById('payment-modal');
   document.getElementById('modal-product-name').textContent = `🎫 Cuenta #${cuenta.numero}`;
   document.getElementById('modal-product-price').textContent = formatCurrency(cuenta.total);
+
+  // Reset all sub-views
+  document.getElementById('payment-methods-grid').style.display = 'grid';
+  document.getElementById('cash-calculator').style.display = 'none';
+  document.getElementById('transfer-display').style.display = 'none';
+
   modal.style.display = 'flex';
 }
 
 export async function handlePayment(method) {
   if (!activeCuentaId) return;
+  const cuenta = db.getCuentaById(activeCuentaId);
+
+  if (method === 'efectivo') {
+    showCashCalculator(cuenta);
+  } else if (method === 'transferencia') {
+    showTransferDisplay(cuenta);
+  } else {
+    executePayment(method);
+  }
+}
+
+function showTransferDisplay(cuenta) {
+  const grid = document.getElementById('payment-methods-grid');
+  const display = document.getElementById('transfer-display');
+  
+  grid.style.display = 'none';
+  display.style.display = 'block';
+
+  const backBtn = document.getElementById('transfer-back-btn');
+  const confirmBtn = document.getElementById('transfer-confirm-btn');
+
+  const onBack = () => {
+    grid.style.display = 'grid';
+    display.style.display = 'none';
+    backBtn.removeEventListener('click', onBack);
+    confirmBtn.removeEventListener('click', onConfirm);
+  };
+
+  const onConfirm = () => {
+    executePayment('transferencia');
+    backBtn.removeEventListener('click', onBack);
+    confirmBtn.removeEventListener('click', onConfirm);
+  };
+
+  backBtn.addEventListener('click', onBack);
+  confirmBtn.addEventListener('click', onConfirm);
+}
+
+function showCashCalculator(cuenta) {
+  const grid = document.getElementById('payment-methods-grid');
+  const calc = document.getElementById('cash-calculator');
+  const input = document.getElementById('cash-received-input');
+  
+  grid.style.display = 'none';
+  calc.style.display = 'block';
+
+  document.getElementById('calc-total-display').textContent = formatCurrency(cuenta.total);
+  input.value = '';
+  input.focus();
+  updateChangeDisplay(0, cuenta.total);
+
+  // One-time listeners for calc actions
+  const backBtn = document.getElementById('calc-back-btn');
+  const confirmBtn = document.getElementById('calc-confirm-btn');
+
+  const onBack = () => {
+    grid.style.display = 'grid';
+    calc.style.display = 'none';
+    backBtn.removeEventListener('click', onBack);
+    confirmBtn.removeEventListener('click', onConfirm);
+    input.removeEventListener('input', onInput);
+  };
+
+  const onConfirm = () => {
+    executePayment('efectivo');
+    backBtn.removeEventListener('click', onBack);
+    confirmBtn.removeEventListener('click', onConfirm);
+    input.removeEventListener('input', onInput);
+  };
+
+  const onInput = () => {
+    const received = parseFloat(input.value) || 0;
+    updateChangeDisplay(received, cuenta.total);
+  };
+
+  backBtn.addEventListener('click', onBack);
+  confirmBtn.addEventListener('click', onConfirm);
+  input.addEventListener('input', onInput);
+  
+  // Also handle Enter key on input
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter' && !confirmBtn.disabled) onConfirm();
+  };
+}
+
+function updateChangeDisplay(received, total) {
+  const change = db.round2(received - total);
+  const display = document.getElementById('calc-change-display');
+  const confirmBtn = document.getElementById('calc-confirm-btn');
+
+  if (received < total && received > 0) {
+    display.textContent = 'Insuficiente';
+    display.classList.add('insufficient');
+    confirmBtn.disabled = true;
+  } else {
+    display.textContent = formatCurrency(Math.max(0, change));
+    display.classList.remove('insufficient');
+    confirmBtn.disabled = received < total;
+  }
+}
+
+async function executePayment(method) {
   const c = await db.cobrarCuenta(activeCuentaId, method);
   if (c) {
     activeCuentaId = null;

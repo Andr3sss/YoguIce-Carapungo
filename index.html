@@ -92,7 +92,7 @@
         <span id="modal-product-name"></span>
         <span id="modal-product-price"></span>
       </div>
-      <div class="payment-buttons">
+      <div class="payment-buttons" id="payment-methods-grid">
         <button class="payment-btn payment-cash" data-method="efectivo">
           <span class="payment-icon">💵</span>
           <span>Efectivo</span>
@@ -105,6 +105,53 @@
           <span class="payment-icon">📱</span>
           <span>Transferencia</span>
         </button>
+      </div>
+
+      <!-- Cash Calculator (Hidden by default) -->
+      <div id="cash-calculator" style="display: none;">
+        <div class="calc-container">
+          <div class="calc-row">
+            <span class="calc-label">Total a Pagar:</span>
+            <span class="calc-value total" id="calc-total-display">$0.00</span>
+          </div>
+          <div class="calc-row">
+            <span class="calc-label">Efectivo Recibido:</span>
+            <div class="calc-input-wrapper">
+              <span class="currency-prefix">$</span>
+              <input type="number" id="cash-received-input" class="calc-input" placeholder="0.00" step="0.01" inputmode="decimal">
+            </div>
+          </div>
+          <div class="calc-change-box">
+            <span class="calc-change-label">CAMBIO A ENTREGAR</span>
+            <div class="calc-change-amount" id="calc-change-display">$0.00</div>
+          </div>
+          <div class="calc-actions">
+            <button class="btn btn-ghost" id="calc-back-btn">⬅️ Volver</button>
+            <button class="btn btn-lg btn-success" id="calc-confirm-btn" disabled>✅ Confirmar Pago</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Transfer Display / Deuna QR (Hidden by default) -->
+      <div id="transfer-display" style="display: none;">
+        <div class="transfer-container">
+          <div class="deuna-header">
+            <span class="deuna-logo">d!</span>
+            <span class="deuna-title">Pago con Deuna / Transferencia</span>
+          </div>
+          <div class="qr-box">
+            <img src="assets/qr_deuna.jpg" alt="QR Deuna" class="qr-img">
+          </div>
+          <div class="acc-box">
+            <span class="acc-label">Número de Cuenta (Ahorros):</span>
+            <div class="acc-number">2100181604</div>
+            <span class="acc-bank">Banco Pichincha - YoguIce</span>
+          </div>
+          <div class="calc-actions">
+            <button class="btn btn-ghost" id="transfer-back-btn">⬅️ Volver</button>
+            <button class="btn btn-lg btn-success" id="transfer-confirm-btn">✅ Confirmar Transferencia</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
