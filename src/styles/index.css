@@ -4448,3 +4448,234 @@ input:checked+.toggle-slider:before {
     display: none !important;
   }
 }
+
+/* ========================================
+   📦 Tab Switcher (Gastos / Suministros)
+   ======================================== */
+
+.tab-switcher {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-xl);
+  padding: 4px;
+  margin-bottom: var(--spacing-lg);
+  width: fit-content;
+}
+
+.tab-btn {
+  padding: 10px 24px;
+  border: none;
+  border-radius: calc(var(--radius-xl) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: inherit;
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  background: linear-gradient(135deg, var(--accent-pink), var(--accent-coral));
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(217, 70, 239, 0.3);
+}
+
+/* ========================================
+   📦 Suministros CRUD
+   ======================================== */
+
+.suministros-layout {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .suministros-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.suministros-add-card {
+  padding: 24px;
+}
+
+.suministros-add-card h3 {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+
+.suministros-add-row {
+  display: flex;
+  gap: 10px;
+}
+
+.suministros-add-row .form-input {
+  flex: 1;
+}
+
+.suministros-hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.suministros-table-card {
+  padding: 24px;
+}
+
+.suministros-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.suministros-table-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.suministros-count {
+  font-size: 13px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.suministros-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+.suministros-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.suministros-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+.suministro-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background var(--transition-fast);
+  min-height: 48px;
+}
+
+.suministro-row:hover {
+  background: var(--bg-card-hover);
+}
+
+.suministro-row.inactivo {
+  opacity: 0.5;
+}
+
+.suministro-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.suministro-num {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 22px;
+  text-align: right;
+}
+
+.suministro-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inactivo-badge {
+  font-size: 10px;
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--danger);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  padding: 2px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.suministro-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.suministro-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  transition: background var(--transition-fast);
+  line-height: 1;
+}
+
+.suministro-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.btn-save-edit {
+  background: rgba(52, 211, 153, 0.15) !important;
+  color: var(--success) !important;
+  font-size: 13px !important;
+  font-weight: 700;
+  border: 1px solid rgba(52, 211, 153, 0.2) !important;
+  padding: 6px 12px !important;
+}
+
+.btn-save-edit:hover {
+  background: rgba(52, 211, 153, 0.25) !important;
+}
+
+.btn-cancel-edit {
+  color: var(--text-muted) !important;
+  font-size: 18px !important;
+}
+
+.suministro-edit-input {
+  flex: 1;
+  padding: 6px 10px !important;
+  font-size: 14px !important;
+  height: 36px !important;
+}
+
+.suministros-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 40px 0;
+  font-size: 14px;
+}

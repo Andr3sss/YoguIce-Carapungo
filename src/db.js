@@ -393,6 +393,22 @@ export function startCloudSync() {
     emit('gastos-changed', shadowStore.gastos);
   });
 
+  // Sync Insumos (Inventory)
+  onSnapshot(collection(firestore, 'insumos'), (snapshot) => {
+    if (snapshot.docs.length > 0) {
+      const insumos = snapshot.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
+      saveCollection(DB_KEYS.INSUMOS, insumos);
+      emit('insumos-changed', insumos);
+    } else {
+      // Seed Firestore with real default insumos if it's empty
+      const local = getCollection(DB_KEYS.INSUMOS);
+      const toSeed = local.length > 0 ? local : DEFAULT_INSUMOS;
+      toSeed.forEach(ins => {
+        addDoc(collection(firestore, 'insumos'), { id: ins.id, nombre: ins.nombre, activo: ins.activo }).catch(console.error);
+      });
+    }
+  }, (err) => console.error('❌ Firestore Insumos Sync Error:', err));
+
   // Sync Categorias
   onSnapshot(collection(firestore, 'categorias'), (snapshot) => {
     shadowStore.categorias = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -691,27 +707,96 @@ export async function deleteCategory(id) {
 }
 
 // ========================================
-// Insumos (Inventory) CRUD
-// ========================================
+const DEFAULT_INSUMOS = [
+  { id: 1,  nombre: 'Vasos de Soft',           activo: true },
+  { id: 2,  nombre: 'Vasos de Soft Doble',      activo: true },
+  { id: 3,  nombre: 'Conos',                    activo: true },
+  { id: 4,  nombre: 'Conos Dobles',             activo: true },
+  { id: 5,  nombre: 'Tulipanes',                activo: true },
+  { id: 6,  nombre: 'Fresas con Crema',         activo: true },
+  { id: 7,  nombre: 'Vasos de Café',            activo: true },
+  { id: 8,  nombre: 'Quesos',                   activo: true },
+  { id: 9,  nombre: 'Brownie',                  activo: true },
+  { id: 10, nombre: 'Cheesecake de Maracuyá',   activo: true },
+  { id: 11, nombre: 'Coca Lata',                activo: true },
+  { id: 12, nombre: 'Coca Botella',             activo: true },
+  { id: 13, nombre: 'Agua',                     activo: true },
+  { id: 14, nombre: 'Fuce Tea',                 activo: true },
+  { id: 15, nombre: 'Banana',                   activo: true },
+  { id: 16, nombre: 'Tarrina de Waffle',        activo: true },
+  { id: 17, nombre: 'Tarrina de Banana',        activo: true },
+  { id: 18, nombre: 'Tarrina para Llevar',      activo: true },
+  { id: 19, nombre: 'Tarrina Medios Litros',    activo: true },
+  { id: 20, nombre: 'Tiramisú',                 activo: true },
+  { id: 21, nombre: 'Cremas',                   activo: true },
+  { id: 22, nombre: 'Balas',                    activo: true },
+];
+
+// Names of old test insumos to detect and replace
+const OLD_TEST_INSUMOS = ['Conos', 'Vasos Pequeños', 'Vasos Grandes', 'Cucharas', 'Tarrinas'];
 
 export function getInsumos() {
-  const insumos = getCollection(DB_KEYS.INSUMOS);
-  if (insumos.length === 0) {
-    const defaultInsumos = [
-      { id: 1, nombre: 'Conos', activo: true },
-      { id: 2, nombre: 'Vasos Pequeños', activo: true },
-      { id: 3, nombre: 'Vasos Grandes', activo: true },
-      { id: 4, nombre: 'Cucharas', activo: true },
-      { id: 5, nombre: 'Tarrinas', activo: true },
-    ];
-    saveCollection(DB_KEYS.INSUMOS, defaultInsumos);
-    return defaultInsumos;
+  const stored = getCollection(DB_KEYS.INSUMOS);
+  // Detect old test data (exactly 5 items with the old names)
+  const isOldTestData = stored.length > 0 && stored.length <= 5 &&
+    stored.every(i => OLD_TEST_INSUMOS.includes(i.nombre));
+  if (stored.length === 0 || isOldTestData) {
+    saveCollection(DB_KEYS.INSUMOS, DEFAULT_INSUMOS);
+    return DEFAULT_INSUMOS;
   }
-  return insumos;
+  return stored;
 }
 
 export function getActiveInsumos() {
-  return getInsumos().filter(i => i.activo);
+  return getInsumos().filter(i => i.activo !== false);
+}
+
+export async function addInsumo(nombre) {
+  const existing = getInsumos();
+  const maxId = existing.length > 0 ? Math.max(...existing.map(i => Number(i.id) || 0)) : 0;
+  const newInsumo = { id: maxId + 1, nombre: nombre.trim(), activo: true };
+  const ref = await addDoc(collection(firestore, 'insumos'), newInsumo);
+  newInsumo.firestoreId = ref.id;
+  existing.push(newInsumo);
+  saveCollection(DB_KEYS.INSUMOS, existing);
+  emit('insumos-changed', existing);
+  return newInsumo;
+}
+
+export async function updateInsumo(id, changes) {
+  const insumos = getInsumos();
+  const idx = insumos.findIndex(i => i.id === id || i.firestoreId === id);
+  if (idx === -1) return;
+  Object.assign(insumos[idx], changes);
+  saveCollection(DB_KEYS.INSUMOS, insumos);
+  emit('insumos-changed', insumos);
+  // Update in Firestore - find by firestoreId or query by id
+  const fid = insumos[idx].firestoreId;
+  if (fid) {
+    await updateDoc(doc(firestore, 'insumos', fid), changes);
+  } else {
+    // Query by numeric id field
+    const q = query(collection(firestore, 'insumos'), where('id', '==', id));
+    const snap = await getDocs(q);
+    snap.forEach(d => updateDoc(d.ref, changes));
+  }
+}
+
+export async function deleteInsumo(id) {
+  let insumos = getInsumos();
+  const target = insumos.find(i => i.id === id || i.firestoreId === id);
+  if (!target) return;
+  insumos = insumos.filter(i => i !== target);
+  saveCollection(DB_KEYS.INSUMOS, insumos);
+  emit('insumos-changed', insumos);
+  const fid = target.firestoreId;
+  if (fid) {
+    await deleteDoc(doc(firestore, 'insumos', fid));
+  } else {
+    const q = query(collection(firestore, 'insumos'), where('id', '==', id));
+    const snap = await getDocs(q);
+    snap.forEach(d => deleteDoc(d.ref));
+  }
 }
 
 // ========================================
