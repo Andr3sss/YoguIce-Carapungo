@@ -3735,20 +3735,37 @@ input:checked+.toggle-slider:before {
     flex-wrap: wrap;
   }
 
-  /* Compact cuentas-bar on mobile: horizontal scroll, no tall overflow */
+  /* Compact cuentas-bar on mobile: hide header, thin horizontal strip */
   .cuentas-bar {
-    max-height: 80px;
-    overflow: hidden;
+    padding: 0 8px;
+    padding-top: env(safe-area-inset-top, 0px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .cuentas-bar .cuentas-header {
+    margin-bottom: 4px !important;
+    gap: 8px !important;
+  }
+
+  /* Hide the title and Nueva Cuenta on mobile — keep only hamburger */
+  .cuentas-bar .cuentas-header h3 {
+    display: none !important;
+  }
+
+  .cuentas-bar .cuentas-header .btn {
+    display: none !important;
   }
 
   .cuentas-bar .cuentas-list {
+    display: flex;
     flex-direction: row;
     overflow-x: auto;
     overflow-y: hidden;
-    gap: 8px;
-    padding-bottom: 4px;
+    gap: 6px;
+    padding: 6px 0;
     -ms-overflow-style: none;
     scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
   }
 
   .cuentas-bar .cuentas-list::-webkit-scrollbar {
@@ -3756,14 +3773,25 @@ input:checked+.toggle-slider:before {
   }
 
   .cuentas-bar .cuenta-card {
-    min-width: 130px;
+    min-width: auto;
     flex-shrink: 0;
-    padding: 8px 12px;
-    font-size: 12px;
+    padding: 6px 12px;
+    font-size: 11px;
+    border-radius: 20px;
+    white-space: nowrap;
   }
 
   .cuentas-bar .cuenta-card .cuenta-card-meta {
     display: none; /* Hide meta on mobile to save space */
+  }
+
+  .cuentas-bar .cuenta-card .cuenta-card-total {
+    font-size: 12px;
+  }
+
+  .cuentas-bar .cuentas-empty {
+    padding: 6px 0;
+    font-size: 12px;
   }
 
   .mobile-menu-btn {
