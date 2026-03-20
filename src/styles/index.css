@@ -3717,6 +3717,7 @@ input:checked+.toggle-slider:before {
     height: auto;
     min-width: 0;
     gap: 8px;
+    padding-bottom: 80px; /* Clear space for the fixed Ver Cargo FAB */
   }
 
   .wizard-main {
@@ -3732,6 +3733,37 @@ input:checked+.toggle-slider:before {
     padding: 16px;
     gap: 12px;
     flex-wrap: wrap;
+  }
+
+  /* Compact cuentas-bar on mobile: horizontal scroll, no tall overflow */
+  .cuentas-bar {
+    max-height: 80px;
+    overflow: hidden;
+  }
+
+  .cuentas-bar .cuentas-list {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 8px;
+    padding-bottom: 4px;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .cuentas-bar .cuentas-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .cuentas-bar .cuenta-card {
+    min-width: 130px;
+    flex-shrink: 0;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .cuentas-bar .cuenta-card .cuenta-card-meta {
+    display: none; /* Hide meta on mobile to save space */
   }
 
   .mobile-menu-btn {
@@ -4185,6 +4217,117 @@ input:checked+.toggle-slider:before {
   background: rgba(255, 255, 255, 0.05);
   padding: 1px 6px;
   border-radius: 4px;
+}
+
+/* Alert Banner for Old Orders */
+.kds-alert-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  padding: 12px 20px;
+  border-radius: 16px;
+  margin-bottom: 5px;
+  animation: slideInDown 0.4s ease-out;
+}
+
+.kds-alert-content {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.kds-alert-icon {
+  font-size: 24px;
+  animation: pulse-warning 2s infinite;
+}
+
+.kds-alert-text {
+  font-size: 14px;
+  color: #fbbf24;
+}
+
+.kds-alert-text small {
+  display: block;
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+.kds-alert-btn {
+  background: var(--warning);
+  color: #000;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.kds-alert-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+}
+
+@keyframes pulse-warning {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+@keyframes slideInDown {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Wizard Notes Textarea */
+.wizard-nota-textarea {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 80px;
+  max-height: 200px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.wizard-nota-textarea::placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.wizard-nota-textarea:focus {
+  outline: none;
+  border-color: var(--accent-pink);
+  box-shadow: 0 0 20px rgba(255, 107, 157, 0.15);
+}
+
+/* KDS Kitchen Note Display */
+.kds-item-nota {
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 8px;
+  color: #fbbf24;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  animation: noteGlow 2s ease-in-out infinite;
+}
+
+@keyframes noteGlow {
+  0%, 100% { box-shadow: 0 0 0 rgba(251, 191, 36, 0); }
+  50% { box-shadow: 0 0 12px rgba(251, 191, 36, 0.2); }
 }
 
 @media (max-width: 768px) {

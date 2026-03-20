@@ -16,10 +16,14 @@ let selectedSabores = new Set();
 let selectedCoberturas = new Set();
 let selectedToppings = new Set();
 let selectedExtras = new Set();
-let selectedNotas = new Set();
+let selectedNotas = ''; // Free-text note for kitchen
 
 let currentModifier = 'normal';
 let lastAddedConfigId = null;
+
+// Promo sub-product state
+let promoSubProduct = 0; // 0 = not in promo mode, 1 = configuring product 1, 2 = product 2, etc.
+let promoSelections = []; // Array of { sabores: Set, coberturas: Set, toppings: Set } per sub-product
 
 let isListenersAttached = false;
 let pendingRenders = new Set();
@@ -45,7 +49,25 @@ function resetWizard() {
   selectedCoberturas.clear();
   selectedToppings.clear();
   selectedExtras.clear();
-  selectedNotas.clear();
+  selectedNotas = '';
+  promoSubProduct = 0;
+  promoSelections = [];
+}
+
+function isPromoProduct() {
+  return configuringProduct?.opciones?.promo?.cantidad > 1;
+}
+
+function getPromoPerProduct() {
+  return configuringProduct?.opciones?.promo?.perProduct || {};
+}
+
+function getEffectiveOptions() {
+  // For promo products, use per-product limits; otherwise use global limits
+  if (isPromoProduct() && promoSubProduct > 0) {
+    return getPromoPerProduct();
+  }
+  return configuringProduct?.opciones || {};
 }
 
 function advanceWizardStep() {
@@ -55,20 +77,39 @@ function advanceWizardStep() {
     return;
   }
 
+  const promo = p.opciones.promo;
+  const opts = isPromoProduct() && promoSubProduct > 0 ? getPromoPerProduct() : p.opciones;
+
   if (wizardStep === 'products') {
-    if (p.opciones.sabores?.max > 0) wizardStep = 'sabores';
-    else if (p.opciones.coberturas?.max > 0) wizardStep = 'coberturas';
-    else if (p.opciones.toppings?.max > 0) wizardStep = 'toppings';
-    else wizardStep = 'extras_notas';
+    // Starting configuration
+    if (promo && promo.cantidad > 1) {
+      // Enter promo mode: start sub-product 1
+      promoSubProduct = 1;
+      promoSelections = [];
+      selectedSabores.clear(); selectedCoberturas.clear(); selectedToppings.clear();
+      const ppOpts = promo.perProduct;
+      if (ppOpts.sabores?.max > 0) wizardStep = 'sabores';
+      else if (ppOpts.coberturas?.max > 0) wizardStep = 'coberturas';
+      else if (ppOpts.toppings?.max > 0) wizardStep = 'toppings';
+      else wizardStep = 'extras_notas';
+    } else {
+      if (opts.sabores?.max > 0) wizardStep = 'sabores';
+      else if (opts.coberturas?.max > 0) wizardStep = 'coberturas';
+      else if (opts.toppings?.max > 0) wizardStep = 'toppings';
+      else wizardStep = 'extras_notas';
+    }
   } else if (wizardStep === 'sabores') {
-    if (p.opciones.coberturas?.max > 0) wizardStep = 'coberturas';
-    else if (p.opciones.toppings?.max > 0) wizardStep = 'toppings';
+    if (opts.coberturas?.max > 0) wizardStep = 'coberturas';
+    else if (opts.toppings?.max > 0) wizardStep = 'toppings';
+    else if (isPromoProduct()) { advancePromoSubProduct(); return; }
     else wizardStep = 'extras_notas';
   } else if (wizardStep === 'coberturas') {
-    if (p.opciones.toppings?.max > 0) wizardStep = 'toppings';
+    if (opts.toppings?.max > 0) wizardStep = 'toppings';
+    else if (isPromoProduct()) { advancePromoSubProduct(); return; }
     else wizardStep = 'extras_notas';
   } else if (wizardStep === 'toppings') {
-    wizardStep = 'extras_notas';
+    if (isPromoProduct()) { advancePromoSubProduct(); return; }
+    else wizardStep = 'extras_notas';
   } else if (wizardStep === 'extras_notas') {
     addCurrentWizardProduct();
   }
@@ -77,26 +118,93 @@ function advanceWizardStep() {
   rerender('wizard');
 }
 
+function advancePromoSubProduct() {
+  const promo = configuringProduct.opciones.promo;
+  // Save current sub-product selections
+  promoSelections[promoSubProduct - 1] = {
+    sabores: new Set(selectedSabores),
+    coberturas: new Set(selectedCoberturas),
+    toppings: new Set(selectedToppings)
+  };
+
+  if (promoSubProduct < promo.cantidad) {
+    // Move to next sub-product
+    promoSubProduct++;
+    selectedSabores.clear(); selectedCoberturas.clear(); selectedToppings.clear();
+    const ppOpts = promo.perProduct;
+    if (ppOpts.sabores?.max > 0) wizardStep = 'sabores';
+    else if (ppOpts.coberturas?.max > 0) wizardStep = 'coberturas';
+    else if (ppOpts.toppings?.max > 0) wizardStep = 'toppings';
+    else wizardStep = 'extras_notas';
+  } else {
+    // All sub-products done, go to extras
+    wizardStep = 'extras_notas';
+  }
+  currentModifier = 'normal';
+  rerender('wizard');
+}
+
 function goWizardBack() {
   const p = configuringProduct;
+  const opts = isPromoProduct() && promoSubProduct > 0 ? getPromoPerProduct() : (p?.opciones || {});
+
   if (wizardStep === 'products') {
     wizardStep = 'categories';
     wizardCategory = null;
   } else if (wizardStep === 'sabores') {
-    wizardStep = 'products';
-    configuringProduct = null;
+    if (isPromoProduct() && promoSubProduct > 1) {
+      // Go back to last step of previous sub-product
+      promoSubProduct--;
+      const prev = promoSelections[promoSubProduct - 1] || {};
+      selectedSabores = new Set(prev.sabores || []);
+      selectedCoberturas = new Set(prev.coberturas || []);
+      selectedToppings = new Set(prev.toppings || []);
+      const ppOpts = getPromoPerProduct();
+      if (ppOpts.toppings?.max > 0) wizardStep = 'toppings';
+      else if (ppOpts.coberturas?.max > 0) wizardStep = 'coberturas';
+      else wizardStep = 'sabores';
+    } else {
+      wizardStep = 'products';
+      configuringProduct = null;
+      promoSubProduct = 0;
+      promoSelections = [];
+    }
   } else if (wizardStep === 'coberturas') {
-    if (p.opciones.sabores?.max > 0) wizardStep = 'sabores';
-    else { wizardStep = 'products'; configuringProduct = null; }
+    if (opts.sabores?.max > 0) wizardStep = 'sabores';
+    else if (isPromoProduct() && promoSubProduct > 1) {
+      promoSubProduct--;
+      const prev = promoSelections[promoSubProduct - 1] || {};
+      selectedSabores = new Set(prev.sabores || []);
+      selectedCoberturas = new Set(prev.coberturas || []);
+      selectedToppings = new Set(prev.toppings || []);
+      const ppOpts = getPromoPerProduct();
+      if (ppOpts.toppings?.max > 0) wizardStep = 'toppings';
+      else if (ppOpts.coberturas?.max > 0) wizardStep = 'coberturas';
+      else if (ppOpts.sabores?.max > 0) wizardStep = 'sabores';
+    } else { wizardStep = 'products'; configuringProduct = null; promoSubProduct = 0; promoSelections = []; }
   } else if (wizardStep === 'toppings') {
-    if (p.opciones.coberturas?.max > 0) wizardStep = 'coberturas';
-    else if (p.opciones.sabores?.max > 0) wizardStep = 'sabores';
-    else { wizardStep = 'products'; configuringProduct = null; }
+    if (opts.coberturas?.max > 0) wizardStep = 'coberturas';
+    else if (opts.sabores?.max > 0) wizardStep = 'sabores';
+    else { wizardStep = 'products'; configuringProduct = null; promoSubProduct = 0; promoSelections = []; }
   } else if (wizardStep === 'extras_notas') {
-    if (p.opciones.toppings?.max > 0) wizardStep = 'toppings';
-    else if (p.opciones.coberturas?.max > 0) wizardStep = 'coberturas';
-    else if (p.opciones.sabores?.max > 0) wizardStep = 'sabores';
-    else { wizardStep = 'products'; configuringProduct = null; }
+    if (isPromoProduct()) {
+      // Go back to last sub-product's last step
+      const promo = p.opciones.promo;
+      promoSubProduct = promo.cantidad;
+      const prev = promoSelections[promoSubProduct - 1] || {};
+      selectedSabores = new Set(prev.sabores || []);
+      selectedCoberturas = new Set(prev.coberturas || []);
+      selectedToppings = new Set(prev.toppings || []);
+      const ppOpts = getPromoPerProduct();
+      if (ppOpts.toppings?.max > 0) wizardStep = 'toppings';
+      else if (ppOpts.coberturas?.max > 0) wizardStep = 'coberturas';
+      else if (ppOpts.sabores?.max > 0) wizardStep = 'sabores';
+    } else {
+      if (p.opciones.toppings?.max > 0) wizardStep = 'toppings';
+      else if (p.opciones.coberturas?.max > 0) wizardStep = 'coberturas';
+      else if (p.opciones.sabores?.max > 0) wizardStep = 'sabores';
+      else { wizardStep = 'products'; configuringProduct = null; }
+    }
   }
 
   currentModifier = 'normal';
@@ -105,14 +213,49 @@ function goWizardBack() {
 
 function addCurrentWizardProduct() {
   const p = configuringProduct;
-  const config = {
-    variante: selectedVariant,
-    sabores: [...selectedSabores],
-    coberturas: [...selectedCoberturas],
-    toppings: [...selectedToppings],
-    extras: [...selectedExtras].map(en => db.EXTRAS.find(ex => ex.nombre === en)).filter(Boolean),
-    notas: [...selectedNotas]
-  };
+  let config;
+
+  if (isPromoProduct() && promoSelections.length > 0) {
+    // Save last sub-product selections if not yet saved
+    if (promoSubProduct > 0 && !promoSelections[promoSubProduct - 1]) {
+      promoSelections[promoSubProduct - 1] = {
+        sabores: new Set(selectedSabores),
+        coberturas: new Set(selectedCoberturas),
+        toppings: new Set(selectedToppings)
+      };
+    }
+
+    // Merge all sub-product selections
+    const allSabores = [];
+    const allCoberturas = [];
+    const allToppings = [];
+    const promo = p.opciones.promo;
+
+    promoSelections.forEach((sel, i) => {
+      const label = `${promo.label || 'Producto'} ${i + 1}`;
+      if (sel.sabores?.size > 0) allSabores.push(`[${label}: ${[...sel.sabores].join(', ')}]`);
+      if (sel.coberturas?.size > 0) allCoberturas.push(`[${label}: ${[...sel.coberturas].join(', ')}]`);
+      if (sel.toppings?.size > 0) allToppings.push(`[${label}: ${[...sel.toppings].join(', ')}]`);
+    });
+
+    config = {
+      variante: selectedVariant,
+      sabores: allSabores,
+      coberturas: allCoberturas,
+      toppings: allToppings,
+      extras: [...selectedExtras].map(en => db.EXTRAS.find(ex => ex.nombre === en)).filter(Boolean),
+      notas: selectedNotas
+    };
+  } else {
+    config = {
+      variante: selectedVariant,
+      sabores: [...selectedSabores],
+      coberturas: [...selectedCoberturas],
+      toppings: [...selectedToppings],
+      extras: [...selectedExtras].map(en => db.EXTRAS.find(ex => ex.nombre === en)).filter(Boolean),
+      notas: selectedNotas
+    };
+  }
   lastAddedConfigId = p.id;
   db.addItemToCuenta(activeCuentaId, p, config).then(() => {
     wizardStep = 'success';
@@ -257,7 +400,8 @@ function renderWizardProducts() {
 
 function renderWizardOptions(tipo) {
   const p = configuringProduct;
-  const optConfig = p.opciones?.[tipo] || { min: 0, max: 0 };
+  const isPromo = isPromoProduct() && promoSubProduct > 0;
+  const optConfig = isPromo ? (getPromoPerProduct()[tipo] || { min: 0, max: 0 }) : (p.opciones?.[tipo] || { min: 0, max: 0 });
   const list = tipo === 'sabores' ? db.SABORES_HELADO : (tipo === 'coberturas' ? db.COBERTURAS_LIQUIDAS : db.TOPPINGS);
   const selectedSet = tipo === 'sabores' ? selectedSabores : (tipo === 'coberturas' ? selectedCoberturas : selectedToppings);
   const title = tipo.charAt(0).toUpperCase() + tipo.slice(1);
@@ -266,9 +410,18 @@ function renderWizardOptions(tipo) {
   const reachedMax = selectedSet.size >= optConfig.max;
   const reachedMin = selectedSet.size >= optConfig.min;
 
+  const promoLabel = isPromo ? p.opciones.promo.label || 'Producto' : '';
+  const promoTotal = isPromo ? p.opciones.promo.cantidad : 0;
+  const subtitleParts = [];
+  if (isPromo) {
+    subtitleParts.push(`<span style="background:var(--accent-pink); color:#fff; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:800;">🏆 ${promoLabel} ${promoSubProduct} de ${promoTotal}</span>`);
+  }
+  subtitleParts.push(`<span style="color:var(--accent-mint); font-weight:700;">Para: ${p.nombre}</span>`);
+  subtitleParts.push(`Seleccionado: ${selectedSet.size} de ${optConfig.max} (Min: ${optConfig.min})`);
+
   return `
     <div class="wizard-main">
-      ${renderWizardHeader(`Elige ${title}`, `<span style="color:var(--accent-mint); font-weight:700;">Para: ${p.nombre}</span> &bull; Seleccionado: ${selectedSet.size} de ${optConfig.max} (Min: ${optConfig.min})`, stepIdx, 5)}
+      ${renderWizardHeader(`Elige ${title}`, subtitleParts.join(' &bull; '), stepIdx, 5)}
       <div class="wizard-body">
         
         <div class="modifier-modes" style="display:flex; overflow-x:auto; padding-bottom:12px; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05); margin-bottom: 16px; min-width: 0;">
@@ -290,7 +443,7 @@ function renderWizardOptions(tipo) {
   }).join('')}
           ${reachedMax ? `
             <button class="wizard-opt-btn opt-extra" data-action="wizard-add-extra-opt" data-tipo="${tipo}">
-              ➕ ${title.substring(0, title.length - 1)} Extra (+$0.20)
+              ➕ ${title.substring(0, title.length - 1)} Extra (+$${db.getPrecioExtraPorTipo(tipo).toFixed(2)})
             </button>
           ` : ''}
         </div>
@@ -320,14 +473,14 @@ function renderWizardExtrasNotas() {
           `).join('')}
         </div>
 
-        <h4 style="margin-bottom:12px; color:var(--danger)">Notas para Cocina</h4>
-        <div class="wizard-opt-grid">
-          ${db.NOTAS_RAPIDAS.map(n => `
-            <button class="wizard-opt-btn ${selectedNotas.has(n) ? 'opt-selected' : ''}" data-action="wizard-toggle-nota" data-val="${n}">
-              ${n}
-            </button>
-          `).join('')}
-        </div>
+        <h4 style="margin-bottom:12px; color:var(--danger); display:flex; align-items:center; gap:8px;">📝 Nota para Cocina</h4>
+        <textarea 
+          id="wizard-nota-input" 
+          class="wizard-nota-textarea" 
+          placeholder="Escribe aquí instrucciones especiales para cocina... Ej: Sin crema, sin fruta, bien caliente, etc."
+          rows="3"
+          data-action="nota-input"
+        >${selectedNotas}</textarea>
       </div>
       <div class="wizard-footer">
         <div class="wizard-summary-bar"></div>
@@ -641,7 +794,7 @@ function handlePosActions(e) {
 
       configuringProduct = p;
       selectedVariant = p.variantes?.[0] || null;
-      selectedSabores.clear(); selectedCoberturas.clear(); selectedToppings.clear(); selectedExtras.clear(); selectedNotas.clear();
+      selectedSabores.clear(); selectedCoberturas.clear(); selectedToppings.clear(); selectedExtras.clear(); selectedNotas = '';
 
       if (!p.opciones && !p.variantes?.length) {
         addCurrentWizardProduct();
@@ -659,6 +812,9 @@ function handlePosActions(e) {
       break;
 
     case 'wizard-finish-product':
+      // Capture textarea value before adding
+      const notaInput = document.getElementById('wizard-nota-input');
+      if (notaInput) selectedNotas = notaInput.value.trim();
       addCurrentWizardProduct();
       break;
 
@@ -682,17 +838,18 @@ function handlePosActions(e) {
           found = true;
         }
       }
-      if (!found) theSet.add(finalVal);
-
-      rerender('wizard');
-
-      // Auto-advance
-      if (!found && currentModifier === 'normal') {
-        const optMax = configuringProduct.opciones[tipoOpt]?.max;
-        if (theSet.size === optMax) {
-          setTimeout(() => advanceWizardStep(), 250);
+      if (!found) {
+        // Enforce max limit: use per-product limits for promos
+        const effectiveOpts = getEffectiveOptions();
+        const optMax = effectiveOpts[tipoOpt]?.max || 0;
+        if (currentModifier === 'extra' || currentModifier === 'sin' || currentModifier === 'aparte' || currentModifier === 'poco' || theSet.size < optMax) {
+          theSet.add(finalVal);
+        } else {
+          window.showToast(`⚠️ Máximo ${optMax} ${tipoOpt} permitidos`, 'error');
         }
       }
+
+      rerender('wizard');
       break;
 
     case 'wizard-add-extra-opt':
@@ -707,11 +864,7 @@ function handlePosActions(e) {
       rerender('wizard');
       break;
 
-    case 'wizard-toggle-nota':
-      const n = target.dataset.val;
-      if (selectedNotas.has(n)) selectedNotas.delete(n); else selectedNotas.add(n);
-      rerender('wizard');
-      break;
+    // wizard-toggle-nota removed: notes are now free-text via textarea
 
     case 'wizard-go-home':
       resetWizard();

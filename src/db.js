@@ -169,6 +169,22 @@ export const NOTAS_RAPIDAS = new Proxy([], {
     const method = arr[prop]; return typeof method === 'function' ? method.bind(arr) : arr[prop];
   }
 });
+
+// Precios configurables por tipo de opción extra
+const DEFAULT_PRECIOS_EXTRA = { sabores: 1.00, coberturas: 0.20, toppings: 0.20 };
+
+export function getPreciosExtra() {
+  const stored = localStorage.getItem('yoguice_precios_extra');
+  return stored ? JSON.parse(stored) : { ...DEFAULT_PRECIOS_EXTRA };
+}
+
+export function setPreciosExtra(precios) {
+  localStorage.setItem('yoguice_precios_extra', JSON.stringify(precios));
+}
+
+export function getPrecioExtraPorTipo(tipo) {
+  return getPreciosExtra()[tipo] ?? 0.20;
+}
 // Menú Oficial Heladería
 const DEFAULT_PRODUCTS = [
   // WAFFLES
@@ -246,11 +262,17 @@ const DEFAULT_PRODUCTS = [
 
   // PROMOCIONES
   { id: 29, nombre: 'Promo: 2 Copas Queso', precio: 5.50, categoria: 'PROMOCIONES', activo: true, emoji: '🏆', 
-    opciones: { sabores: {min: 4, max: 4}, coberturas: {min: 2, max: 2}, toppings: {min: 0, max: 0}, incluye_desc: '2 Copas completas (4 sabores total)' } },
+    opciones: { 
+      promo: { cantidad: 2, label: 'Copa', perProduct: { sabores: {min:2, max:2}, coberturas: {min:1, max:1}, toppings: {min:0, max:0} } },
+      sabores: {min: 4, max: 4}, coberturas: {min: 2, max: 2}, toppings: {min: 0, max: 0}, incluye_desc: '2 Copas completas (2 sabores + 1 cobertura c/u)' } },
   { id: 30, nombre: 'Promo: 2 Waffles Trad.', precio: 7.00, categoria: 'PROMOCIONES', activo: true, emoji: '🏆', 
-    opciones: { sabores: {min: 4, max: 4}, coberturas: {min: 2, max: 2}, toppings: {min: 0, max: 0}, incluye_desc: '2 Waffles completos (4 sabores total)' } },
+    opciones: { 
+      promo: { cantidad: 2, label: 'Waffle', perProduct: { sabores: {min:2, max:2}, coberturas: {min:1, max:1}, toppings: {min:0, max:0} } },
+      sabores: {min: 4, max: 4}, coberturas: {min: 2, max: 2}, toppings: {min: 0, max: 0}, incluye_desc: '2 Waffles completos (2 sabores + 1 cobertura c/u)' } },
   { id: 31, nombre: 'Promo: 2 Bubble Waffle', precio: 6.50, categoria: 'PROMOCIONES', activo: true, emoji: '🏆', 
-    opciones: { sabores: {min: 2, max: 2}, coberturas: {min: 2, max: 2}, toppings: {min: 0, max: 0}, incluye_desc: '2 Bubble Waffles completos' } },
+    opciones: { 
+      promo: { cantidad: 2, label: 'Bubble Waffle', perProduct: { sabores: {min:1, max:1}, coberturas: {min:1, max:1}, toppings: {min:0, max:0} } },
+      sabores: {min: 2, max: 2}, coberturas: {min: 2, max: 2}, toppings: {min: 0, max: 0}, incluye_desc: '2 Bubble Waffles (1 sabor + 1 cobertura c/u)' } },
   { id: 32, nombre: 'Promo: 2 Capu + 1 Brownie', precio: 3.99, categoria: 'PROMOCIONES', activo: true, emoji: '🏆' },
 ];
 
@@ -454,6 +476,26 @@ export function initProducts() {
   // La sincronización con Firestore se encargará de actualizar esto si hay datos en la nube.
   if (existing.length === 0) {
     saveCollection(DB_KEYS.PRODUCTOS, DEFAULT_PRODUCTS);
+  } else {
+    // Migration: patch PROMOCIONES products with promo field if missing
+    let needsSave = false;
+    for (const p of existing) {
+      if (p.categoria === 'PROMOCIONES' && p.opciones && !p.opciones.promo) {
+        const defaultProd = DEFAULT_PRODUCTS.find(dp => dp.id === p.id);
+        if (defaultProd?.opciones?.promo) {
+          p.opciones.promo = defaultProd.opciones.promo;
+          // Also update the incluye_desc if available
+          if (defaultProd.opciones.incluye_desc) p.opciones.incluye_desc = defaultProd.opciones.incluye_desc;
+          needsSave = true;
+          // Push to Firestore
+          setDoc(doc(firestore, 'productos', p.id.toString()), p).catch(console.error);
+        }
+      }
+    }
+    if (needsSave) {
+      saveCollection(DB_KEYS.PRODUCTOS, existing);
+      console.log('🔄 Migrated PROMOCIONES products with promo sub-product data');
+    }
   }
 }
 
@@ -898,6 +940,20 @@ export async function addItemToCuenta(cuentaId, producto, config = null) {
     if (config.coberturas && config.coberturas.length > 0) details.push(`Cob: ${config.coberturas.join(', ')}`);
     if (config.toppings && config.toppings.length > 0) details.push(`Top: ${config.toppings.join(', ')}`);
     
+    // Precio por opciones extra (sabores/coberturas/toppings con "(Extra)")
+    const preciosExtra = getPreciosExtra();
+    const extraSabores = (config.sabores || []).filter(s => s.includes('(Extra)')).length;
+    const extraCoberturas = (config.coberturas || []).filter(s => s.includes('(Extra)')).length;
+    const extraToppings = (config.toppings || []).filter(s => s.includes('(Extra)')).length;
+    const costoExtrasOpciones = round2(
+      (extraSabores * (preciosExtra.sabores || 1.00)) +
+      (extraCoberturas * (preciosExtra.coberturas || 0.20)) +
+      (extraToppings * (preciosExtra.toppings || 0.20))
+    );
+    if (costoExtrasOpciones > 0) {
+      finalPrice += costoExtrasOpciones;
+    }
+
     if (config.extras && config.extras.length > 0) {
       const extraDesc = config.extras.map(e => `+${e.nombre}`).join(', ');
       details.push(`Extras: ${extraDesc}`);
@@ -905,7 +961,7 @@ export async function addItemToCuenta(cuentaId, producto, config = null) {
       finalPrice += extrasCosto;
     }
     
-    if (config.notas && config.notas.length > 0) details.push(`[NOTAS: ${config.notas.join(', ')}]`);
+    if (config.notas && config.notas.length > 0) details.push(`📝 ${config.notas}`);
     detailsText = details.join(' | ');
   }
 
@@ -922,7 +978,8 @@ export async function addItemToCuenta(cuentaId, producto, config = null) {
       precio: finalPrice,
       emoji: producto.emoji || '🍦',
       cantidad: 1,
-      detalles: detailsText
+      detalles: detailsText,
+      notaCocina: config?.notas || ''
     });
   }
 
@@ -1296,6 +1353,9 @@ export async function abrirDia(efectivoInicial = 0, inventarioInicial = []) {
   
   // Cloud write (async)
   await setDoc(doc(firestore, 'jornadas', id), apertura);
+
+  // Limpiar cocina de pedidos antiguos automáticamente al abrir el día
+  await archivarPedidosAntiguosCocina();
   
   emit('apertura-changed', apertura);
   return apertura;
@@ -1402,6 +1462,7 @@ export async function enviarACocina(cuentaId) {
     return pedido;
   } else {
     // Crear nuevo pedido
+    const today = new Date().toISOString().split('T')[0];
     const id = generateId();
     const nuevoPedido = {
       id,
@@ -1409,6 +1470,7 @@ export async function enviarACocina(cuentaId) {
       mesa: cuenta.mesa, // Número de mesa real
       mesaNumero: cuenta.numero, // Correlativo del pedido
       timestamp: Date.now(),
+      fecha: today,
       estado: 'pendiente',
       items: cuenta.items.map(item => ({ ...item, preparado: false }))
     };
@@ -1492,6 +1554,32 @@ export async function cancelarPedidoCocina(cuentaId) {
     return true;
   }
   return false;
+}
+
+/**
+ * Marca como 'listo' todos los pedidos de fechas anteriores que no estén finalizados.
+ */
+export async function archivarPedidosAntiguosCocina() {
+  const today = new Date().toISOString().split('T')[0];
+  const pedidos = getCollection(DB_KEYS.COCINA);
+  let changed = false;
+
+  for (const p of pedidos) {
+    // Si no tiene fecha (pedidos viejos) o su fecha es anterior a hoy
+    if (p.estado !== 'listo' && p.estado !== 'cancelado' && (!p.fecha || p.fecha < today)) {
+      p.estado = 'listo';
+      changed = true;
+      // Cloud update sin await para que sea rápido (optimistic approach)
+      updateDoc(doc(firestore, 'cocina_kds', p.id), { estado: 'listo' }).catch(console.error);
+    }
+  }
+
+  if (changed) {
+    saveCollection(DB_KEYS.COCINA, pedidos);
+    localStorage.setItem('kds_ping', Date.now().toString());
+    emit('cocina-updated', null);
+  }
+  return changed;
 }
 
 // ========================================

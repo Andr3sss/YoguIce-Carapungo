@@ -160,6 +160,31 @@ function renderOpcionesModal() {
           `).join('')}
         </div>
 
+        <div style="margin-bottom: 16px; background: rgba(0,0,0,0.3); padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+            <span style="font-size:18px;">💰</span>
+            <div style="font-weight:700; font-size:13px;">Precios por opción extra</div>
+          </div>
+          <div style="display:flex; gap:12px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:6px; background:rgba(0,0,0,0.2); padding:8px 12px; border-radius:8px; flex:1; min-width:140px;">
+              <span style="font-size:12px;">🍧 Sabor</span>
+              <span style="color:var(--accent-mint); font-weight:800;">$</span>
+              <input type="number" id="precio-extra-sabores" class="form-input" value="${db.getPrecioExtraPorTipo('sabores').toFixed(2)}" step="0.05" min="0" style="width:65px; text-align:center; font-weight:800; font-size:14px; color:var(--accent-mint); background:rgba(0,0,0,0.3); border-radius:6px; padding:6px;" />
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; background:rgba(0,0,0,0.2); padding:8px 12px; border-radius:8px; flex:1; min-width:140px;">
+              <span style="font-size:12px;">🍯 Cobert.</span>
+              <span style="color:var(--accent-mint); font-weight:800;">$</span>
+              <input type="number" id="precio-extra-coberturas" class="form-input" value="${db.getPrecioExtraPorTipo('coberturas').toFixed(2)}" step="0.05" min="0" style="width:65px; text-align:center; font-weight:800; font-size:14px; color:var(--accent-mint); background:rgba(0,0,0,0.3); border-radius:6px; padding:6px;" />
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; background:rgba(0,0,0,0.2); padding:8px 12px; border-radius:8px; flex:1; min-width:140px;">
+              <span style="font-size:12px;">🍬 Topping</span>
+              <span style="color:var(--accent-mint); font-weight:800;">$</span>
+              <input type="number" id="precio-extra-toppings" class="form-input" value="${db.getPrecioExtraPorTipo('toppings').toFixed(2)}" step="0.05" min="0" style="width:65px; text-align:center; font-weight:800; font-size:14px; color:var(--accent-mint); background:rgba(0,0,0,0.3); border-radius:6px; padding:6px;" />
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="btn-save-precios-extra" style="margin-top:10px; width:100%;">💾 Guardar Precios</button>
+        </div>
+
         <div style="margin-bottom: 20px; display:flex; gap: 8px;">
           <input type="text" id="new-opt-name" class="form-input" placeholder="Nombre de la nueva opción..." style="text-transform: uppercase;">
           ${currentOpcionesTab === 'extra' ? `
@@ -505,6 +530,15 @@ export function init() {
         currentOpcionesTab = btn.dataset.tab;
         rerender();
       });
+    });
+
+    // Save extra option prices (per type)
+    document.getElementById('btn-save-precios-extra')?.addEventListener('click', () => {
+      const sabores = parseFloat(document.getElementById('precio-extra-sabores')?.value) || 1.00;
+      const coberturas = parseFloat(document.getElementById('precio-extra-coberturas')?.value) || 0.20;
+      const toppings = parseFloat(document.getElementById('precio-extra-toppings')?.value) || 0.20;
+      db.setPreciosExtra({ sabores, coberturas, toppings });
+      window.showToast(`✅ Precios actualizados: Sabor $${sabores.toFixed(2)}, Cobert. $${coberturas.toFixed(2)}, Topping $${toppings.toFixed(2)}`, 'success');
     });
 
     document.getElementById('btn-add-opt')?.addEventListener('click', () => {

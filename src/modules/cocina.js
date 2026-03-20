@@ -1,4 +1,4 @@
-import { getPedidosCocina, actualizarEstadoCocina, actualizarItemCocina, getCuentaById, on, off } from '../db.js';
+import { getPedidosCocina, actualizarEstadoCocina, actualizarItemCocina, getCuentaById, archivarPedidosAntiguosCocina, on, off } from '../db.js';
 import { formatTime, formatCurrency } from '../main.js';
 
 let intervalId = null;
@@ -20,6 +20,11 @@ function getTimerClass(timestamp, estado) {
 
 export function render() {
   const allPedidos = getPedidosCocina();
+  const today = new Date().toISOString().split('T')[0];
+  
+  // Detectar si hay pedidos de días anteriores abiertos
+  const hasOldPedidos = allPedidos.some(p => p.estado !== 'listo' && p.estado !== 'cancelado' && (!p.fecha || p.fecha < today));
+
   const pedidos = showHistory 
     ? allPedidos.filter(p => p.estado === 'listo').sort((a, b) => b.timestamp - a.timestamp)
     : allPedidos.filter(p => p.estado !== 'listo').sort((a, b) => a.timestamp - b.timestamp);
@@ -58,6 +63,21 @@ export function render() {
           </div>
         </div>
       </header>
+
+      ${!showHistory && hasOldPedidos ? `
+        <div class="kds-alert-banner">
+          <div class="kds-alert-content">
+            <span class="kds-alert-icon">⚠️</span>
+            <div class="kds-alert-text">
+              <strong>Atención:</strong> Tienes pedidos pendientes de días anteriores. 
+              <small>Esto puede causar confusión con las nuevas órdenes de hoy.</small>
+            </div>
+          </div>
+          <button class="kds-alert-btn" data-action="clear-old-orders">
+            🧹 Limpiar Cocina
+          </button>
+        </div>
+      ` : ''}
 
       ${pedidos.length === 0 ? `
         <div class="empty-state" style="margin: auto;">
@@ -101,6 +121,7 @@ export function render() {
                       <div class="kds-item-details">
                         <div class="kds-item-name">${item.nombre}</div>
                         ${item.detalles ? `<div class="kds-item-options">${item.detalles}</div>` : ''}
+                        ${item.notaCocina ? `<div class="kds-item-nota">📝 ${item.notaCocina}</div>` : ''}
                       </div>
                     </div>
                   `).join('')}
@@ -161,6 +182,24 @@ async function handleKdsClicks(e) {
   if (historyToggle) {
     showHistory = !showHistory;
     handleCocinaUpdate();
+    return;
+  }
+
+  // 4. Clear old orders
+  const clearOldBtn = e.target.closest('[data-action="clear-old-orders"]');
+  if (clearOldBtn) {
+    const confirmed = await window.showConfirm({
+      icon: '🧹',
+      title: 'Limpiar Cocina',
+      message: '¿Estás seguro de que deseas archivar todos los pedidos de días anteriores?',
+      confirmText: '🧹 Limpiar Ahora',
+      confirmClass: 'btn-primary'
+    });
+    
+    if (confirmed) {
+      await archivarPedidosAntiguosCocina();
+      handleCocinaUpdate();
+    }
     return;
   }
 }
