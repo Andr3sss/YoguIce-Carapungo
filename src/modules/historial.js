@@ -120,6 +120,18 @@ export function init() {
       if (e.target === detailModal) detailModal.style.display = 'none';
     });
   }
+
+  // Refresh when new cierres arrive from Firestore
+  db.on('apertura-changed', rerender);
+  db.on('cierres-changed', rerender);
+}
+
+function rerender() {
+  const container = document.getElementById('page-container');
+  if (container) {
+    container.innerHTML = render();
+    init();
+  }
 }
 
 function showDetail(dateStr) {

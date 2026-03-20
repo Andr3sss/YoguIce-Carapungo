@@ -1269,21 +1269,29 @@ export function calcCuentasSummary(cuentas) {
 // Cash Closings CRUD
 // ========================================
 
+/**
+ * getCierres: Derives from the Firestore-synced jornadas collection.
+ * Jornadas with estado='cerrado' that have a cierre object ARE the cierres.
+ * This ensures historial survives localStorage clears.
+ */
 export function getCierres() {
-  return getCollection(DB_KEYS.CIERRES);
+  return getAperturas()
+    .filter(a => a.estado === 'cerrado' && a.cierre)
+    .map(a => ({
+      ...a.cierre,
+      id: a.id,
+      fecha: a.fecha,
+      efectivo_inicial: a.efectivo_inicial,
+      inventario_diario: a.inventario_diario || [],
+      timestamp: a.timestamp_cierre || a.timestamp_apertura,
+    }))
+    .sort((a, b) => b.timestamp - a.timestamp);
 }
 
 export function addCierre(cierre) {
-  const cierres = getCierres();
-  const newCierre = {
-    ...cierre,
-    id: generateId(),
-    timestamp: Date.now(),
-  };
-  cierres.push(newCierre);
-  saveCollection(DB_KEYS.CIERRES, cierres);
-  emit('cierres-changed', cierres);
-  return newCierre;
+  // addCierre data is embedded in the jornada via cerrarDia().
+  // This function keeps backward compat but no longer needs a separate collection.
+  emit('cierres-changed', getCierres());
 }
 
 export function getCierreByDate(dateStr) {
