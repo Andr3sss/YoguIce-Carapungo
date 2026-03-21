@@ -1411,16 +1411,35 @@ function saveAperturas(data) {
   saveCollection(DB_KEYS.APERTURAS, data);
 }
 
+// Helper para obtener fecha local YYYY-MM-DD
+function getLocalDate() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function getAperturaHoy() {
-  const today = new Date().toISOString().split('T')[0];
-  const todayAperturas = getAperturas().filter(a => a.fecha === today);
-  // Prefer the open one, otherwise return the most recent
-  return todayAperturas.find(a => a.estado === 'abierto') || todayAperturas[todayAperturas.length - 1] || null;
+  const today = getLocalDate();
+  const aperturas = getAperturas();
+  // Buscamos la apertura de hoy, o la última si no hay de hoy (por si cambió de día a media jornada)
+  const todayAperturas = aperturas.filter(a => a.fecha === today);
+  if (todayAperturas.length > 0) {
+    return todayAperturas.find(a => a.estado === 'abierto') || todayAperturas[todayAperturas.length - 1];
+  }
+  
+  // Si no hay de hoy, pero hay una abierta de "ayer" (ej: noche), la tomamos
+  const lastOpen = aperturas.find(a => a.estado === 'abierto');
+  if (lastOpen) return lastOpen;
+
+  // Sino retornamos la última registrada
+  return aperturas[aperturas.length - 1] || null;
 }
 
 export async function abrirDia(efectivoInicial = 0, inventarioInicial = []) {
   const aperturas = getAperturas();
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDate();
   const now = new Date();
 
   if (aperturas.find(a => a.fecha === today && a.estado === 'abierto')) return null;
@@ -1456,8 +1475,10 @@ export async function abrirDia(efectivoInicial = 0, inventarioInicial = []) {
 
 export async function cerrarDia(dataCierre, inventarioFinal = []) {
   const aperturas = getAperturas();
-  const today = new Date().toISOString().split('T')[0];
-  const apertura = aperturas.find(a => a.fecha === today && a.estado === 'abierto');
+  const today = getLocalDate();
+  
+  // Buscamos específicamente la que está abierta
+  const apertura = aperturas.find(a => a.estado === 'abierto');
   if (!apertura) return null;
 
   const now = new Date();
@@ -1497,6 +1518,27 @@ export async function cerrarDia(dataCierre, inventarioFinal = []) {
     efectivo_inicial: apertura.efectivo_inicial,
   });
 
+  emit('apertura-changed', apertura);
+  return apertura;
+}
+
+export async function reabrirDia() {
+  const aperturas = getAperturas();
+  // Buscamos la última cerrada (del día que sea)
+  const apertura = aperturas.slice().reverse().find(a => a.estado === 'cerrado');
+  if (!apertura) return null;
+
+  apertura.estado = 'abierto';
+  apertura.hora_cierre = null;
+  apertura.timestamp_cierre = null;
+  apertura.cierre = null;
+  apertura.inventario_diario = null;
+
+  saveAperturas(aperturas);
+  // Re-write to Cloud
+  const { doc, updateDoc, firestore } = await import('./firebase.js');
+  await updateDoc(doc(firestore, 'jornadas', apertura.id), apertura);
+  
   emit('apertura-changed', apertura);
   return apertura;
 }
@@ -1689,7 +1731,7 @@ export async function addGasto(gasto) {
   const nuevoGasto = {
     id,
     ...gasto,
-    fecha: now.toISOString().split('T')[0],
+    fecha: getLocalDate(),
     hora: now.toTimeString().split(' ')[0],
     timestamp: now.getTime()
   };
@@ -1703,6 +1745,22 @@ export async function addGasto(gasto) {
   
   emit('gastos-changed', shadowStore.gastos);
   return nuevoGasto;
+}
+
+/**
+ * Get expenses only from the CURRENT jornada (after the current apertura).
+ */
+export function getGastosForJornada() {
+  const apertura = getAperturaHoy();
+  if (!apertura || apertura.estado !== 'abierto') {
+    // If day is closed, show expenses from the last apertura's range
+    if (apertura && apertura.estado === 'cerrado') {
+      return getGastos().filter(g => g.timestamp >= apertura.timestamp_apertura && g.timestamp <= (apertura.timestamp_cierre || Date.now()));
+    }
+    return [];
+  }
+  // Only expenses made after this apertura opened
+  return getGastos().filter(g => g.timestamp >= apertura.timestamp_apertura);
 }
 
 // ========================================
