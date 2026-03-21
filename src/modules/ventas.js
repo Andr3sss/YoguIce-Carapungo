@@ -15,7 +15,7 @@ let selectedVariant = null;
 let selectedSabores = [];
 let selectedCoberturas = [];
 let selectedToppings = [];
-let selectedExtras = new Set(); // Extras remain Set (typically checkbox-style)
+let selectedExtras = []; // Changed from Set to Array to support multiple quantities
 let selectedNotas = ''; // Free-text note for kitchen
 
 let currentModifier = 'normal';
@@ -48,7 +48,7 @@ function resetWizard() {
   selectedSabores = [];
   selectedCoberturas = [];
   selectedToppings = [];
-  selectedExtras.clear();
+  selectedExtras = [];
   selectedNotas = '';
   promoSubProduct = 0;
   promoSelections = [];
@@ -243,7 +243,7 @@ function addCurrentWizardProduct() {
       sabores: allSabores,
       coberturas: allCoberturas,
       toppings: allToppings,
-      extras: [...selectedExtras].map(en => db.EXTRAS.find(ex => ex.nombre === en)).filter(Boolean),
+      extras: selectedExtras.map(en => db.EXTRAS.find(ex => ex.nombre === en)).filter(Boolean),
       notas: selectedNotas
     };
   } else {
@@ -252,7 +252,7 @@ function addCurrentWizardProduct() {
       sabores: [...selectedSabores],
       coberturas: [...selectedCoberturas],
       toppings: [...selectedToppings],
-      extras: [...selectedExtras].map(en => db.EXTRAS.find(ex => ex.nombre === en)).filter(Boolean),
+      extras: selectedExtras.map(en => db.EXTRAS.find(ex => ex.nombre === en)).filter(Boolean),
       notas: selectedNotas
     };
   }
@@ -464,11 +464,15 @@ function renderWizardExtrasNotas() {
       <div class="wizard-body">
         <h4 style="margin-bottom:12px;">Extras (+$$)</h4>
         <div class="wizard-opt-grid" style="margin-bottom:24px;">
-          ${db.EXTRAS.map(e => `
-            <button class="wizard-opt-btn ${selectedExtras.has(e.nombre) ? 'opt-selected' : ''}" data-action="wizard-toggle-extra" data-val="${e.nombre}">
+          ${db.EXTRAS.map(e => {
+    const count = selectedExtras.filter(ex => ex === e.nombre).length;
+    return `
+            <button class="wizard-opt-btn ${count > 0 ? 'opt-selected' : ''}" data-action="wizard-toggle-extra" data-val="${e.nombre}">
+              ${count > 1 ? `<div class="opt-count-badge">x${count}</div>` : ''}
               ${e.nombre} <span style="font-size:10px; opacity:0.7;">+${formatCurrency(e.precio)}</span>
             </button>
-          `).join('')}
+          `;
+  }).join('')}
         </div>
 
         <h4 style="margin-bottom:12px; color:var(--danger); display:flex; align-items:center; gap:8px;">📝 Nota para Cocina</h4>
@@ -481,7 +485,9 @@ function renderWizardExtrasNotas() {
         >${selectedNotas}</textarea>
       </div>
       <div class="wizard-footer">
-        <div class="wizard-summary-bar"></div>
+        <div class="wizard-summary-bar">
+          ${selectedExtras.map((ex, idx) => `<span class="wizard-sum-item" data-action="wizard-remove-extra-item" data-index="${idx}" title="Click para eliminar">+${ex}</span>`).join('')}
+        </div>
         <button class="btn btn-primary btn-lg" data-action="wizard-finish-product">✓ Terminar Producto</button>
       </div>
     </div>
@@ -792,7 +798,7 @@ function handlePosActions(e) {
 
       configuringProduct = p;
       selectedVariant = p.variantes?.[0] || null;
-      selectedSabores = []; selectedCoberturas = []; selectedToppings = []; selectedExtras.clear(); selectedNotas = '';
+      selectedSabores = []; selectedCoberturas = []; selectedToppings = []; selectedExtras = []; selectedNotas = '';
 
       if (!p.opciones && !p.variantes?.length) {
         addCurrentWizardProduct();
@@ -869,7 +875,13 @@ function handlePosActions(e) {
 
     case 'wizard-toggle-extra':
       const ex = target.dataset.val;
-      if (selectedExtras.has(ex)) selectedExtras.delete(ex); else selectedExtras.add(ex);
+      selectedExtras.push(ex);
+      rerender('wizard');
+      break;
+
+    case 'wizard-remove-extra-item':
+      const exIdx = parseInt(target.dataset.index);
+      selectedExtras.splice(exIdx, 1);
       rerender('wizard');
       break;
 

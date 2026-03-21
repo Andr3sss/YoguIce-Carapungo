@@ -18,15 +18,101 @@ function getTimerClass(timestamp, estado) {
   return '';
 }
 
+/**
+ * Parses the structured details string and returns improved HTML.
+ * Handles grouping for "Promo" products by sub-product (e.g., Copa 1, Copa 2).
+ */
+function formatItemDetails(details) {
+  if (!details) return '';
+
+  // Split by categories
+  const parts = details.split(' | ');
+
+  // Detect if it contains bracketed sub-items like [Label 1: ...] or [Copa 1: ...]
+  const hasSubItems = /\[[^\]]+:\s/.test(details);
+
+  if (hasSubItems) {
+    const subProducts = {}; 
+    const extras = [];
+
+    parts.forEach(part => {
+      if (part.includes('📝')) return;
+      if (part.startsWith('Extras:')) {
+        extras.push(part.replace('Extras: ', '').trim());
+        return;
+      }
+      
+      const [catLabel, ...valRest] = part.split(': ');
+      if (valRest.length === 0) {
+        extras.push(part);
+        return;
+      }
+      const valStr = valRest.join(': ');
+
+      // Match all bracketed items [Sub: details]
+      const matches = valStr.match(/\[([^\]]+)\]/g);
+      if (matches) {
+        matches.forEach(m => {
+          const clean = m.slice(1, -1); // remove [ ]
+          const sepIdx = clean.indexOf(': ');
+          if (sepIdx !== -1) {
+            const subLabel = clean.substring(0, sepIdx).trim();
+            const detailsText = clean.substring(sepIdx + 2).trim();
+            if (!subProducts[subLabel]) subProducts[subLabel] = [];
+            subProducts[subLabel].push(`<strong>${catLabel}:</strong> ${detailsText}`);
+          }
+        });
+      } else {
+        extras.push(part);
+      }
+    });
+
+    const sortedKeys = Object.keys(subProducts).sort((a, b) => 
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+    );
+
+    if (sortedKeys.length > 0) {
+      let html = '<div class="kds-promo-container">';
+      sortedKeys.forEach(label => {
+        html += `
+          <div class="kds-promo-sub">
+            <div class="sub-label">${label.toUpperCase()}</div>
+            <div class="sub-details">${subProducts[label].join('<br>')}</div>
+          </div>
+        `;
+      });
+      
+      if (extras.length > 0) {
+        html += `<div class="kds-item-extras-list"><strong>EXTRAS:</strong> ${extras.join(', ')}</div>`;
+      }
+      html += '</div>';
+      return html;
+    }
+  }
+
+  // Fallback for regular orders: split categories into separate lines and bold labels
+  return `<div class="kds-regular-details">
+    ${parts.filter(p => !p.includes('📝')).map(p => {
+      if (p.includes(': ')) {
+        const [label, ...val] = p.split(': ');
+        return `<div><strong>${label}:</strong> ${val.join(': ')}</div>`;
+      }
+      return `<div>${p}</div>`;
+    }).join('')}
+  </div>`;
+}
+
 export function render() {
   const allPedidos = getPedidosCocina();
-  const today = new Date().toISOString().split('T')[0];
+  const d = new Date();
+  const offset = d.getTimezoneOffset() * 60000;
+  const today = new Date(d.getTime() - offset).toISOString().split('T')[0];
   
   // Detectar si hay pedidos de días anteriores abiertos
   const hasOldPedidos = allPedidos.some(p => p.estado !== 'listo' && p.estado !== 'cancelado' && (!p.fecha || p.fecha < today));
 
   const pedidos = showHistory 
-    ? allPedidos.filter(p => p.estado === 'listo').sort((a, b) => b.timestamp - a.timestamp)
+    ? allPedidos.filter(p => p.estado === 'listo' && p.fecha === today).sort((a, b) => b.timestamp - a.timestamp)
     : allPedidos.filter(p => p.estado !== 'listo').sort((a, b) => a.timestamp - b.timestamp);
   
   const stats = {
@@ -120,7 +206,7 @@ export function render() {
                       <div class="kds-item-qty">${item.cantidad}</div>
                       <div class="kds-item-details">
                         <div class="kds-item-name">${item.nombre}</div>
-                        ${item.detalles ? `<div class="kds-item-options">${item.detalles}</div>` : ''}
+                        ${item.detalles ? `<div class="kds-item-options">${formatItemDetails(item.detalles)}</div>` : ''}
                         ${item.notaCocina ? `<div class="kds-item-nota">📝 ${item.notaCocina}</div>` : ''}
                       </div>
                     </div>

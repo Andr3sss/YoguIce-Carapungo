@@ -9,6 +9,8 @@ const { initDB, on, isDiaAbierto, getAperturaHoy } = db;
 import * as ventas from './modules/ventas.js';
 import * as cuadre from './modules/cuadre.js';
 import * as historial from './modules/historial.js';
+import * as historialVentas from './modules/historialVentas.js';
+
 import * as reportes from './modules/reportes.js';
 import * as productos from './modules/productos.js';
 import * as estadisticas from './modules/estadisticas.js';
@@ -55,6 +57,34 @@ window.showToast = function (message, type = 'success') {
 // ========================================
 
 let confirmResolve = null;
+let promptResolve = null;
+
+function setupPromptModal() {
+  const modal = document.getElementById('prompt-modal');
+  const cancelBtn = document.getElementById('prompt-cancel-btn');
+  const okBtn = document.getElementById('prompt-ok-btn');
+  const input = document.getElementById('prompt-input');
+
+  const close = (val) => {
+    modal.style.display = 'none';
+    if (promptResolve) promptResolve(val);
+    promptResolve = null;
+  };
+
+  cancelBtn.addEventListener('click', () => close(null));
+  
+  okBtn.addEventListener('click', () => {
+    close(input.value);
+  });
+
+  input.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') close(input.value);
+  });
+
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) close(null);
+  });
+}
 
 function setupConfirmModal() {
   const modal = document.getElementById('confirm-modal');
@@ -98,13 +128,37 @@ window.showConfirm = function (opts = {}) {
 
   const okBtn = document.getElementById('confirm-ok-btn');
   okBtn.textContent = opts.confirmText || 'Confirmar';
-  okBtn.className = `btn btn-lg ${opts.confirmClass || 'btn-danger'}`;
+  okBtn.className = `btn ${opts.confirmClass || 'btn-danger'} btn-lg`;
 
   modal.style.display = 'flex';
 
   return new Promise((resolve) => {
     confirmResolve = resolve;
   });
+};
+
+/**
+ * Shows a styled prompt modal. Returns a Promise<string|null>.
+ * @param {object} opts - { icon, title, message, defaultValue, confirmText, type }
+ */
+window.showPrompt = function (opts = {}) {
+  const modal = document.getElementById('prompt-modal');
+  const input = document.getElementById('prompt-input');
+  
+  document.getElementById('prompt-icon').textContent = opts.icon || '💰';
+  document.getElementById('prompt-title').textContent = opts.title || 'Ingresar valor';
+  document.getElementById('prompt-message').textContent = opts.message || '';
+  
+  input.value = opts.defaultValue !== undefined ? opts.defaultValue : '';
+  input.type = opts.type || 'text';
+  
+  const okBtn = document.getElementById('prompt-ok-btn');
+  okBtn.textContent = opts.confirmText || 'Confirmar';
+
+  modal.style.display = 'flex';
+  setTimeout(() => input.focus(), 100);
+  
+  return new Promise(resolve => { promptResolve = resolve; });
 };
 
 // ========================================
@@ -115,6 +169,7 @@ const modules = {
   ventas,
   cuadre,
   historial,
+  historialVentas,
   reportes,
   productos,
   estadisticas,
@@ -334,6 +389,7 @@ function init() {
   // Setup modals
   setupPaymentModal();
   setupConfirmModal();
+  setupPromptModal();
 
   // Start clock
   updateClock();

@@ -816,7 +816,7 @@ export function addSale(producto, metodoPago, cuentaId = null) {
     producto_nombre: producto.nombre,
     precio: producto.precio,
     metodo_pago: metodoPago,
-    fecha: now.toISOString().split('T')[0],
+    fecha: getLocalDate(),
     hora: now.toTimeString().split(' ')[0],
     usuario: 'Cajero',
     timestamp: now.getTime(),
@@ -842,7 +842,7 @@ export function addSalesFromCuenta(cuenta, metodoPago) {
         producto_nombre: item.nombre,
         precio: item.precio,
         metodo_pago: metodoPago,
-        fecha: now.toISOString().split('T')[0],
+        fecha: getLocalDate(),
         hora: now.toTimeString().split(' ')[0],
         usuario: 'Cajero',
         timestamp: now.getTime(),
@@ -859,7 +859,7 @@ export function addSalesFromCuenta(cuenta, metodoPago) {
 }
 
 export function getTodaySales() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDate();
   return getSales().filter(s => s.fecha === today);
 }
 
@@ -976,7 +976,7 @@ export async function createCuenta(mesa = null) {
     items: [],
     total: 0,
     metodo_pago: null,
-    fecha_apertura: now.toISOString().split('T')[0],
+    fecha_apertura: getLocalDate(),
     hora_apertura: now.toTimeString().split(' ')[0],
     fecha_cierre: null,
     hora_cierre: null,
@@ -1178,7 +1178,7 @@ export async function cobrarCuenta(cuentaId, metodoPago) {
   const now = new Date();
   cuenta.estado = 'cerrada';
   cuenta.metodo_pago = metodoPago;
-  cuenta.fecha_cierre = now.toISOString().split('T')[0];
+  cuenta.fecha_cierre = getLocalDate();
   cuenta.hora_cierre = now.toTimeString().split(' ')[0];
   cuenta.timestamp_cierre = now.getTime();
 
@@ -1224,7 +1224,7 @@ export async function cancelarCuenta(cuentaId) {
 
   const now = new Date();
   cuenta.estado = 'cancelada';
-  cuenta.fecha_cierre = now.toISOString().split('T')[0];
+  cuenta.fecha_cierre = getLocalDate();
   cuenta.hora_cierre = now.toTimeString().split(' ')[0];
   cuenta.timestamp_cierre = now.getTime();
 
@@ -1242,12 +1242,12 @@ export async function cancelarCuenta(cuentaId) {
 }
 
 export function getTodayCuentas() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDate();
   return getCuentas().filter(c => c.fecha_apertura === today);
 }
 
 export function getCuentasCerradasHoy() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDate();
   return getCuentas().filter(c => c.estado === 'cerrada' && c.fecha_cierre === today);
 }
 
@@ -1357,7 +1357,8 @@ export function getDailyTotals(sales, days = 7) {
   for (let i = days - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
+    const offset = date.getTimezoneOffset() * 60000;
+    const dateStr = new Date(date.getTime() - offset).toISOString().split('T')[0];
     const daySales = sales.filter(s => s.fecha === dateStr);
     const total = daySales.reduce((sum, s) => sum + s.precio, 0);
     result.push({
@@ -1469,6 +1470,23 @@ export async function abrirDia(efectivoInicial = 0, inventarioInicial = []) {
   // Limpiar cocina de pedidos antiguos automáticamente al abrir el día
   await archivarPedidosAntiguosCocina();
   
+  emit('apertura-changed', apertura);
+  return apertura;
+}
+
+export async function updateEfectivoInicial(newAmount) {
+  const aperturas = getAperturas();
+  const apertura = aperturas.find(a => a.estado === 'abierto');
+  if (!apertura) return null;
+
+  apertura.efectivo_inicial = round2(newAmount);
+  saveAperturas(aperturas);
+
+  // Cloud write
+  await updateDoc(doc(firestore, 'jornadas', apertura.id), {
+    efectivo_inicial: apertura.efectivo_inicial
+  });
+
   emit('apertura-changed', apertura);
   return apertura;
 }
@@ -1597,7 +1615,7 @@ export async function enviarACocina(cuentaId) {
     return pedido;
   } else {
     // Crear nuevo pedido
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDate();
     const id = generateId();
     const nuevoPedido = {
       id,
@@ -1695,7 +1713,7 @@ export async function cancelarPedidoCocina(cuentaId) {
  * Marca como 'listo' todos los pedidos de fechas anteriores que no estén finalizados.
  */
 export async function archivarPedidosAntiguosCocina() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDate();
   const pedidos = getCollection(DB_KEYS.COCINA);
   let changed = false;
 

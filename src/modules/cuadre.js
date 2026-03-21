@@ -125,7 +125,7 @@ function renderCierreForm(apertura) {
   const jornadaGastos = db.getGastosForJornada();
   const totalGastos = db.round2(jornadaGastos.reduce((sum, g) => sum + (g.monto || 0), 0));
 
-  const totalEsperado = db.round2(apertura.efectivo_inicial + summary.efectivo + summary.transferencia - totalGastos);
+  const totalEsperado = db.round2(apertura.efectivo_inicial + summary.efectivo - totalGastos);
 
   return `
     <div class="page-header">
@@ -148,7 +148,10 @@ function renderCierreForm(apertura) {
         
         <div class="cuadre-info-row" style="margin-bottom: 16px; font-size: 15px;">
           <span>💵 Efectivo inicial</span>
-          <strong>${formatCurrency(apertura.efectivo_inicial)}</strong>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <strong>${formatCurrency(apertura.efectivo_inicial)}</strong>
+            <button id="btn-edit-efectivo-inicial" style="background:none; border:none; color:var(--accent-mint); cursor:pointer; font-size:14px; padding:0; display:flex; align-items:center;" title="Editar efectivo inicial">✏️</button>
+          </div>
         </div>
 
         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px;">
@@ -181,7 +184,7 @@ function renderCierreForm(apertura) {
           <strong style="font-size: 22px; color: var(--accent-mint);">${formatCurrency(totalEsperado)}</strong>
         </div>
         <div style="font-size: 11px; color: var(--text-muted); text-align: center; margin-bottom: 24px;">
-          Inicial (${formatCurrency(apertura.efectivo_inicial)}) + Ventas (${formatCurrency(db.round2(summary.efectivo + summary.transferencia))}) - Gastos (${formatCurrency(totalGastos)})
+          Inicial (${formatCurrency(apertura.efectivo_inicial)}) + Ventas Efec. (${formatCurrency(summary.efectivo)}) - Gastos (${formatCurrency(totalGastos)})
         </div>
 
         <div class="form-group">
@@ -583,6 +586,26 @@ export function init() {
       }
     });
   }
+
+  const btnEdit = document.getElementById('btn-edit-efectivo-inicial');
+  if (btnEdit) {
+    btnEdit.addEventListener('click', async () => {
+      const apertura = db.getAperturaHoy();
+      const current = apertura.efectivo_inicial;
+      const newVal = await window.showPrompt({
+        title: '💰 Editar Efectivo Inicial',
+        message: 'Ingresa el nuevo monto de efectivo inicial en caja:',
+        defaultValue: current,
+        confirmText: 'Actualizar',
+        type: 'number'
+      });
+      if (newVal !== null) {
+        await db.updateEfectivoInicial(parseFloat(newVal));
+        window.showToast('Efectivo inicial actualizado', 'success');
+        rerender();
+      }
+    });
+  }
 }
 
 function calcularDiferencia() {
@@ -596,7 +619,7 @@ function calcularDiferencia() {
   const apertura = db.getAperturaHoy();
   const summary = db.calcDaySummary(db.getSalesForJornada());
   const totalGastos = db.round2(db.getGastosForJornada().reduce((sum, g) => sum + (g.monto || 0), 0));
-  const totalEsperado = db.round2(apertura.efectivo_inicial + summary.efectivo + summary.transferencia - totalGastos);
+  const totalEsperado = db.round2(apertura.efectivo_inicial + summary.efectivo - totalGastos);
   const diferencia = db.round2(efectivoReal - totalEsperado);
 
   const resultEl = document.getElementById('cuadre-result');
@@ -627,7 +650,7 @@ async function handleCerrarDia() {
   const jornadaSales = db.getSalesForJornada();
   const summary = db.calcDaySummary(jornadaSales);
   const totalGastos = db.round2(db.getGastosForJornada().reduce((sum, g) => sum + (g.monto || 0), 0));
-  const totalEsperado = db.round2(apertura.efectivo_inicial + summary.efectivo + summary.transferencia - totalGastos);
+  const totalEsperado = db.round2(apertura.efectivo_inicial + summary.efectivo - totalGastos);
   const diferencia = db.round2(efectivoReal - totalEsperado);
 
   const transferenciasCount = jornadaSales.filter(s => s.metodo_pago === 'transferencia').length;
