@@ -127,7 +127,7 @@ export function render() {
           <button class="kds-back-btn" onclick="navigateTo('ventas')">
             <span>⬅️</span> Volver a Ventas
           </button>
-          <h1>👨‍🍳 Cocina YOGU-ICE</h1>
+          <h1>👨‍🍳 Cocina YOGU-ICE CARAPUNGO</h1>
         </div>
 
         <div class="kds-header-actions">

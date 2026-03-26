@@ -18,7 +18,7 @@ export function render() {
         <div class="login-header">
           <div class="login-logo">
             <span class="logo-emoji">🍦</span>
-            <h1 class="logo-text">YOGU<span>-ICE</span></h1>
+            <h1 class="logo-text">YOGU<span>-ICE</span> <span style="font-size: 16px; opacity: 0.8; display: block; margin-top: -5px; letter-spacing: 4px; color: var(--accent-pink); font-weight: 800;">CARAPUNGO</span></h1>
           </div>
           <h2>Bienvenido</h2>
           <p>Ingresa tu PIN de 6 dígitos para continuar</p>
@@ -49,7 +49,7 @@ export function render() {
         </div>
 
         <div class="login-footer">
-          <p>© 2026 YOGU-ICE POS • v2.0</p>
+          <p>© 2026 YOGU-ICE CARAPUNGO POS • v2.0</p>
         </div>
       </div>
     </div>
