@@ -1,8 +1,8 @@
-import { getCuentasCerradasHoy, on, off } from '../db.js';
+import { getCuentasCerradasJornada, on, off } from '../db.js';
 import { formatCurrency } from '../main.js';
 
 export function render() {
-  const accounts = getCuentasCerradasHoy().sort((a, b) => b.timestamp_cierre - a.timestamp_cierre);
+  const accounts = getCuentasCerradasJornada().sort((a, b) => b.timestamp_cierre - a.timestamp_cierre);
 
   return `
     <div class="kds-layout">

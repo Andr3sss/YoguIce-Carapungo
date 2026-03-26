@@ -31,7 +31,7 @@ export async function render() {
 
 async function getFilteredSales(filter) {
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = db.getLocalDate(today);
 
   switch (filter) {
     case 'dia':
@@ -39,12 +39,12 @@ async function getFilteredSales(filter) {
     case 'semana': {
       const weekAgo = new Date(today);
       weekAgo.setDate(weekAgo.getDate() - 7);
-      return db.getSalesByDateRange(weekAgo.toISOString().split('T')[0], todayStr);
+      return db.getSalesByDateRange(db.getLocalDate(weekAgo), todayStr);
     }
     case 'mes': {
       const monthAgo = new Date(today);
       monthAgo.setDate(monthAgo.getDate() - 30);
-      return db.getSalesByDateRange(monthAgo.toISOString().split('T')[0], todayStr);
+      return db.getSalesByDateRange(db.getLocalDate(monthAgo), todayStr);
     }
     case 'todo':
       return await db.getGlobalSales();
@@ -55,7 +55,7 @@ async function getFilteredSales(filter) {
 
 async function getFilteredGastos(filter) {
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = db.getLocalDate(today);
   const allGastos = db.getGastos();
 
   switch (filter) {
@@ -64,13 +64,13 @@ async function getFilteredGastos(filter) {
     case 'semana': {
       const weekAgo = new Date(today);
       weekAgo.setDate(weekAgo.getDate() - 7);
-      const weekStr = weekAgo.toISOString().split('T')[0];
+      const weekStr = db.getLocalDate(weekAgo);
       return allGastos.filter(g => g.fecha >= weekStr && g.fecha <= todayStr);
     }
     case 'mes': {
       const monthAgo = new Date(today);
       monthAgo.setDate(monthAgo.getDate() - 30);
-      const monthStr = monthAgo.toISOString().split('T')[0];
+      const monthStr = db.getLocalDate(monthAgo);
       return allGastos.filter(g => g.fecha >= monthStr && g.fecha <= todayStr);
     }
     case 'todo':
@@ -83,7 +83,7 @@ async function getFilteredGastos(filter) {
 function getFilteredAperturas(filter) {
   const allAperturas = db.getHistorialAperturas();
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = db.getLocalDate(today);
 
   switch (filter) {
     case 'dia':
@@ -91,13 +91,13 @@ function getFilteredAperturas(filter) {
     case 'semana': {
       const weekAgo = new Date(today);
       weekAgo.setDate(weekAgo.getDate() - 7);
-      const weekStr = weekAgo.toISOString().split('T')[0];
+      const weekStr = db.getLocalDate(weekAgo);
       return allAperturas.filter(a => a.fecha >= weekStr && a.fecha <= todayStr);
     }
     case 'mes': {
       const monthAgo = new Date(today);
       monthAgo.setDate(monthAgo.getDate() - 30);
-      const monthStr = monthAgo.toISOString().split('T')[0];
+      const monthStr = db.getLocalDate(monthAgo);
       return allAperturas.filter(a => a.fecha >= monthStr && a.fecha <= todayStr);
     }
     case 'todo':

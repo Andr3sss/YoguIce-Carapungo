@@ -42,9 +42,17 @@ export function render() {
         <h2>⚙️ Gestión de Catálogo</h2>
         <p>Configura productos, ingredientes y límites por categoría</p>
       </div>
-      <button class="btn btn-primary" id="btn-add-product">
-        ➕ Nuevo Producto
-      </button>
+      <div style="display:flex; gap: 8px;">
+        <button class="btn btn-secondary" id="btn-import-catalog" style="background: rgba(255,255,255,0.1); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.2);">
+          <span>📥</span> Importar
+        </button>
+        <button class="btn btn-secondary" id="btn-export-catalog" style="background: rgba(255,255,255,0.1); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.2);">
+          <span>📤</span> Exportar
+        </button>
+        <button class="btn btn-primary" id="btn-add-product">
+          ➕ Nuevo Producto
+        </button>
+      </div>
     </div>
 
     <div class="admin-layout">
@@ -622,6 +630,70 @@ export function init() {
     showConfigPanel = true;
     rerender();
   });
+
+  // Export/Import buttons
+  const btnExport = document.getElementById('btn-export-catalog');
+  if (btnExport) {
+    btnExport.addEventListener('click', () => {
+      const data = {
+        productos: db.getProducts(),
+        opciones: db.getOpcionesColeccion()
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'catalogo_yoguice.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      window.showToast('Catálogo exportado exitosamente.', 'success');
+    });
+  }
+
+  const btnImport = document.getElementById('btn-import-catalog');
+  if (btnImport) {
+    btnImport.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const data = JSON.parse(event.target.result);
+            if (data.productos && data.opciones) {
+              const confirm = await window.showConfirm({
+                title: 'Importar Catálogo',
+                message: `¿Estás seguro de importar ${data.productos.length} productos y ${data.opciones.length} opciones? Se añadirán a tu base de datos y podrían sobrescribir los actuales.`,
+                confirmText: 'Importar'
+              });
+              
+              if (confirm) {
+                window.showToast('Importando... espera un momento', 'info');
+                // The correct functions in db.js for external pushing might be updateProduct, or pushing directly to Firebase logic.
+                // Wait! To ensure everything stays in sync with Firebase, since they are new items, we can just call the core add/update functions. But we want to preserve IDs so references don't break.
+                // It's much easier to just use `updateProduct(p.id, p)` which creates it if it uses setDoc, or just rely on a new db helper. Let's just create a new helper in `db.js` if needed, or simple direct writes.
+                // Actually `db.addProduct` ignores custom ID. I will write a small loop here that does a manual localStorage set + dispatch local event. Wait, this must go to Firebase!
+                // Best way: create a `db.importCatalog(data)` function in db.js to handle the raw Firebase writes cleanly.
+                await db.importCatalog(data);
+                window.showToast('¡Catálogo importado exitosamente!', 'success');
+                setTimeout(() => window.location.reload(), 1500);
+              }
+            } else {
+              window.showToast('El archivo JSON no tiene el formato correcto.', 'error');
+            }
+          } catch (err) {
+            window.showToast('Error al leer el archivo.', 'error');
+            console.error(err);
+          }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    });
+  }
 
   // Open Config (Edit)
   document.querySelectorAll('[data-edit-id]').forEach(btn => {

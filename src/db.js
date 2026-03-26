@@ -5,16 +5,16 @@ import {
 } from "firebase/firestore";
 
 const DB_KEYS = {
-  PRODUCTOS: 'heladeria_productos',
-  VENTAS: 'heladeria_ventas',
-  CIERRES: 'heladeria_cierres',
-  CUENTAS: 'heladeria_cuentas',
-  APERTURAS: 'heladeria_aperturas',
-  INSUMOS: 'heladeria_insumos',
-  COCINA: 'heladeria_cocina',
-  GASTOS: 'heladeria_gastos',
-  OPCIONES: 'heladeria_opciones',
-  USUARIOS: 'heladeria_usuarios',
+  PRODUCTOS: 'carapungo_productos',
+  VENTAS: 'carapungo_ventas',
+  CIERRES: 'carapungo_cierres',
+  CUENTAS: 'carapungo_cuentas',
+  APERTURAS: 'carapungo_aperturas',
+  INSUMOS: 'carapungo_insumos',
+  COCINA: 'carapungo_cocina',
+  GASTOS: 'carapungo_gastos',
+  OPCIONES: 'carapungo_opciones',
+  USUARIOS: 'carapungo_usuarios',
 };
 
 const DB_VERSION = 1;
@@ -174,12 +174,12 @@ export const NOTAS_RAPIDAS = new Proxy([], {
 const DEFAULT_PRECIOS_EXTRA = { sabores: 1.00, coberturas: 0.20, toppings: 0.20 };
 
 export function getPreciosExtra() {
-  const stored = localStorage.getItem('yoguice_precios_extra');
+  const stored = localStorage.getItem('carapungo_precios_extra');
   return stored ? JSON.parse(stored) : { ...DEFAULT_PRECIOS_EXTRA };
 }
 
 export function setPreciosExtra(precios) {
-  localStorage.setItem('yoguice_precios_extra', JSON.stringify(precios));
+  localStorage.setItem('carapungo_precios_extra', JSON.stringify(precios));
 }
 
 export function getPrecioExtraPorTipo(tipo) {
@@ -267,8 +267,8 @@ const DEFAULT_PRODUCTS = [
       sabores: {min: 4, max: 4}, coberturas: {min: 2, max: 2}, toppings: {min: 0, max: 0}, incluye_desc: '2 Copas completas (2 sabores + 1 cobertura c/u)' } },
   { id: 30, nombre: 'Promo: 2 Waffles Trad.', precio: 7.00, categoria: 'PROMOCIONES', activo: true, emoji: '🏆', 
     opciones: { 
-      promo: { cantidad: 2, label: 'Waffle', perProduct: { sabores: {min:2, max:2}, coberturas: {min:1, max:1}, toppings: {min:0, max:0} } },
-      sabores: {min: 4, max: 4}, coberturas: {min: 2, max: 2}, toppings: {min: 0, max: 0}, incluye_desc: '2 Waffles completos (2 sabores + 1 cobertura c/u)' } },
+      promo: { cantidad: 2, label: 'Waffle', perProduct: { sabores: {min:1, max:1}, coberturas: {min:1, max:1}, toppings: {min:0, max:0} } },
+      sabores: {min: 2, max: 2}, coberturas: {min: 2, max: 2}, toppings: {min: 0, max: 0}, incluye_desc: '2 Waffles completos (1 sabor helado + 1 cobertura c/u)' } },
   { id: 31, nombre: 'Promo: 2 Bubble Waffle', precio: 6.50, categoria: 'PROMOCIONES', activo: true, emoji: '🏆', 
     opciones: { 
       promo: { cantidad: 2, label: 'Bubble Waffle', perProduct: { sabores: {min:1, max:1}, coberturas: {min:1, max:1}, toppings: {min:0, max:0} } },
@@ -578,6 +578,20 @@ export function deleteProduct(id) {
   deleteDoc(doc(firestore, 'productos', id.toString())).catch(err => {
     console.error("Error al eliminar producto de Firestore:", err);
   });
+}
+
+export async function importCatalog(data) {
+  const { productos, opciones } = data;
+  if (productos && Array.isArray(productos)) {
+    saveCollection(DB_KEYS.PRODUCTOS, productos);
+    const pPromises = productos.map(p => setDoc(doc(firestore, 'productos', p.id.toString()), p));
+    await Promise.all(pPromises);
+  }
+  if (opciones && Array.isArray(opciones)) {
+    saveCollection(DB_KEYS.OPCIONES, opciones);
+    const oPromises = opciones.map(o => setDoc(doc(firestore, 'opciones', o.id.toString()), o));
+    await Promise.all(oPromises);
+  }
 }
 
 // ========================================
@@ -1251,6 +1265,21 @@ export function getCuentasCerradasHoy() {
   return getCuentas().filter(c => c.estado === 'cerrada' && c.fecha_cierre === today);
 }
 
+/**
+ * Get accounts closed only during the CURRENT active session.
+ */
+export function getCuentasCerradasJornada() {
+  const apertura = getAperturaHoy();
+  if (!apertura || apertura.estado !== 'abierto') {
+    // If closed, return for the last session's timeframe
+    if (apertura && apertura.estado === 'cerrado') {
+      return getCuentas().filter(c => c.estado === 'cerrada' && c.timestamp_cierre >= apertura.timestamp_apertura && c.timestamp_cierre <= (apertura.timestamp_cierre || Date.now()));
+    }
+    return [];
+  }
+  return getCuentas().filter(c => c.estado === 'cerrada' && c.timestamp_cierre >= apertura.timestamp_apertura);
+}
+
 export function calcCuentasSummary(cuentas) {
   const cerradas = cuentas.filter(c => c.estado === 'cerrada');
   const canceladas = cuentas.filter(c => c.estado === 'cancelada');
@@ -1357,8 +1386,7 @@ export function getDailyTotals(sales, days = 7) {
   for (let i = days - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
-    const offset = date.getTimezoneOffset() * 60000;
-    const dateStr = new Date(date.getTime() - offset).toISOString().split('T')[0];
+    const dateStr = getLocalDate(date);
     const daySales = sales.filter(s => s.fecha === dateStr);
     const total = daySales.reduce((sum, s) => sum + s.precio, 0);
     result.push({
@@ -1413,11 +1441,10 @@ function saveAperturas(data) {
 }
 
 // Helper para obtener fecha local YYYY-MM-DD
-function getLocalDate() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
+export function getLocalDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
@@ -1669,6 +1696,21 @@ export function getPedidosCocina() {
   return getCollection(DB_KEYS.COCINA);
 }
 
+/**
+ * Get KDS orders only from the CURRENT session.
+ */
+export function getPedidosCocinaJornada() {
+  const apertura = getAperturaHoy();
+  const all = getPedidosCocina();
+  if (!apertura || apertura.estado !== 'abierto') {
+    if (apertura && apertura.estado === 'cerrado') {
+      return all.filter(p => p.timestamp >= apertura.timestamp_apertura && p.timestamp <= (apertura.timestamp_cierre || Date.now()));
+    }
+    return [];
+  }
+  return all.filter(p => p.timestamp >= apertura.timestamp_apertura);
+}
+
 export async function actualizarEstadoCocina(pedidoId, nuevoEstado) {
   const pedidos = getCollection(DB_KEYS.COCINA);
   const index = pedidos.findIndex(p => p.id === pedidoId);
@@ -1710,16 +1752,19 @@ export async function cancelarPedidoCocina(cuentaId) {
 }
 
 /**
- * Marca como 'listo' todos los pedidos de fechas anteriores que no estén finalizados.
+ * Marca como 'listo' todos los pedidos de SESIONES anteriores que no estén finalizados.
  */
 export async function archivarPedidosAntiguosCocina() {
-  const today = getLocalDate();
+  const apertura = getAperturaHoy();
+  if (!apertura) return false;
+
+  const threshold = apertura.timestamp_apertura;
   const pedidos = getCollection(DB_KEYS.COCINA);
   let changed = false;
 
   for (const p of pedidos) {
-    // Si no tiene fecha (pedidos viejos) o su fecha es anterior a hoy
-    if (p.estado !== 'listo' && p.estado !== 'cancelado' && (!p.fecha || p.fecha < today)) {
+    // Si su timestamp es anterior a la apertura actual, se archiva.
+    if (p.estado !== 'listo' && p.estado !== 'cancelado' && (p.timestamp < threshold)) {
       p.estado = 'listo';
       changed = true;
       // Cloud update sin await para que sea rápido (optimistic approach)
@@ -1779,6 +1824,30 @@ export function getGastosForJornada() {
   }
   // Only expenses made after this apertura opened
   return getGastos().filter(g => g.timestamp >= apertura.timestamp_apertura);
+}
+
+
+export function getGastosSummary() {
+  const all = getGastos();
+  const now = new Date();
+  
+  // Daily (Current session)
+  const daily = getGastosForJornada();
+  
+  // Weekly (Natural Week, starting Monday)
+  const monday = new Date(now);
+  const day = now.getDay(); // 0 is Sun, 1 is Mon
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  monday.setDate(diff);
+  monday.setHours(0,0,0,0);
+  
+  const weekly = all.filter(g => g.timestamp >= monday.getTime());
+  
+  return {
+    daily: daily.reduce((s, g) => s + (g.monto || 0), 0),
+    weekly: weekly.reduce((s, g) => s + (g.monto || 0), 0),
+    total: all.reduce((s, g) => s + (g.monto || 0), 0)
+  };
 }
 
 // ========================================
@@ -1845,8 +1914,12 @@ export function initUsers() {
   if (existing.length === 0) {
     const defaults = [
       { id: 'u1', nombre: 'GERENTE', rol: 'jefe', pin: '112233', activo: true },
-      { id: 'u2', nombre: 'MESERO 1', rol: 'mesero', pin: '445566', activo: true },
-      { id: 'u3', nombre: 'DESARROLLADOR', rol: 'desarrollador', pin: '998877', activo: true }
+      { id: 'u2', nombre: 'DESARROLLADOR', rol: 'desarrollador', pin: '998877', activo: true },
+      { id: 'u3', nombre: 'KERLY', rol: 'mesero', pin: '104526', activo: true },
+      { id: 'u4', nombre: 'SAMANTHA', rol: 'mesero', pin: '821937', activo: true },
+      { id: 'u5', nombre: 'ALEXANDRA', rol: 'mesero', pin: '563014', activo: true },
+      { id: 'u6', nombre: 'SCARLETH', rol: 'mesero', pin: '294871', activo: true },
+      { id: 'u7', nombre: 'PATRICIA', rol: 'mesero', pin: '735162', activo: true }
     ];
     saveCollection(DB_KEYS.USUARIOS, defaults);
     return defaults;
@@ -1875,7 +1948,7 @@ export async function updateUserPIN(userId, newPin) {
   return users[index];
 }
 
-let currentUser = JSON.parse(localStorage.getItem('heladeria_current_user') || 'null');
+let currentUser = JSON.parse(localStorage.getItem('carapungo_current_user') || 'null');
 
 export function getCurrentUser() {
   return currentUser;
@@ -1884,9 +1957,9 @@ export function getCurrentUser() {
 export function setCurrentUser(user) {
   currentUser = user;
   if (user) {
-    localStorage.setItem('heladeria_current_user', JSON.stringify(user));
+    localStorage.setItem('carapungo_current_user', JSON.stringify(user));
   } else {
-    localStorage.removeItem('heladeria_current_user');
+    localStorage.removeItem('carapungo_current_user');
   }
   emit('user-logged-in', user);
 }

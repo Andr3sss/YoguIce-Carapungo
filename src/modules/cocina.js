@@ -1,4 +1,4 @@
-import { getPedidosCocina, actualizarEstadoCocina, actualizarItemCocina, getCuentaById, archivarPedidosAntiguosCocina, on, off } from '../db.js';
+import { getPedidosCocinaJornada, actualizarEstadoCocina, actualizarItemCocina, getCuentaById, archivarPedidosAntiguosCocina, on, off, getAperturaHoy } from '../db.js';
 import { formatTime, formatCurrency } from '../main.js';
 
 let intervalId = null;
@@ -103,16 +103,15 @@ function formatItemDetails(details) {
 }
 
 export function render() {
-  const allPedidos = getPedidosCocina();
-  const d = new Date();
-  const offset = d.getTimezoneOffset() * 60000;
-  const today = new Date(d.getTime() - offset).toISOString().split('T')[0];
+  const allPedidos = getPedidosCocinaJornada();
+  const apertura = getAperturaHoy();
+  const threshold = apertura ? apertura.timestamp_apertura : 0;
   
-  // Detectar si hay pedidos de días anteriores abiertos
-  const hasOldPedidos = allPedidos.some(p => p.estado !== 'listo' && p.estado !== 'cancelado' && (!p.fecha || p.fecha < today));
+  // Detectar si hay pedidos de sesiones anteriores abiertos (basado en timestamp)
+  const hasOldPedidos = allPedidos.some(p => p.estado !== 'listo' && p.estado !== 'cancelado' && (p.timestamp < threshold));
 
   const pedidos = showHistory 
-    ? allPedidos.filter(p => p.estado === 'listo' && p.fecha === today).sort((a, b) => b.timestamp - a.timestamp)
+    ? allPedidos.filter(p => p.estado === 'listo').sort((a, b) => b.timestamp - a.timestamp)
     : allPedidos.filter(p => p.estado !== 'listo').sort((a, b) => a.timestamp - b.timestamp);
   
   const stats = {

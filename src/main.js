@@ -245,8 +245,10 @@ function checkPermissions() {
     let allowed = true;
 
     if (role === 'mesero') {
-      // Mesero only has access to Ventas and Cocina
-      if (page !== 'ventas' && page !== 'cocina') {
+      const isDesktopView = window.innerWidth > 900; // Umbral para detectar "Vista de Escritorio" en móviles
+      const extraAllowed = isDesktopView && ['cuadre', 'gastos', 'historialVentas'].includes(page);
+      
+      if (page !== 'ventas' && page !== 'cocina' && !extraAllowed) {
         allowed = false;
       }
     }
@@ -405,6 +407,9 @@ function init() {
   db.on('cocina-updated', () => playSound('update-order', true));  // Desktop only
   db.on('cuenta-cerrada', () => playSound('payment', false));      // All devices
   db.on('cuenta-cancelada', () => playSound('cancel', true));      // Desktop only
+
+  // Update permissions on resize (detects desktop view on mobile)
+  window.addEventListener('resize', checkPermissions);
 
   // Navigate to default page
   const user = db.getCurrentUser();
