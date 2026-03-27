@@ -3,13 +3,13 @@ import { getFirestore } from "firebase/firestore";
 
 // Tu configuración de Firebase
 const firebaseConfig = {
-  apiKey: "AIzaSyC9lpZkFLAGz5aPd6ZgKEOEeddyjvwWlKQ",
-  authDomain: "yogu-ice-carapungo.firebaseapp.com",
-  projectId: "yogu-ice-carapungo",
-  storageBucket: "yogu-ice-carapungo.firebasestorage.app",
-  messagingSenderId: "153730189364",
-  appId: "1:153730189364:web:e8ccfe96a708f76013a261",
-  measurementId: "G-DF0PGS340Z"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Inicializar Firebase

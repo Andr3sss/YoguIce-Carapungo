@@ -1581,7 +1581,6 @@ export async function reabrirDia() {
 
   saveAperturas(aperturas);
   // Re-write to Cloud
-  const { doc, updateDoc, firestore } = await import('./firebase.js');
   await updateDoc(doc(firestore, 'jornadas', apertura.id), apertura);
   
   emit('apertura-changed', apertura);
