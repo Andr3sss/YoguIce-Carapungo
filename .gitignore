@@ -5,6 +5,6 @@ dist
 .gemini
 *.mjs
 *.png
-*.jpg
 *.log
 .env
+!public/assets/*.jpg

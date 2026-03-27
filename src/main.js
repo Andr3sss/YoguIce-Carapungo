@@ -422,7 +422,7 @@ function init() {
     document.getElementById('main-content').style.marginLeft = '0';
     document.getElementById('main-content').style.width = '100%';
   } else {
-    document.getElementById('sidebar').style.display = 'md' === 'xs' ? 'none' : 'flex'; // Reset sidebar
+    document.getElementById('sidebar').style.display = 'flex'; // Reset sidebar
     checkPermissions();
     navigateTo('ventas');
   }

@@ -15,6 +15,7 @@ const DB_KEYS = {
   GASTOS: 'carapungo_gastos',
   OPCIONES: 'carapungo_opciones',
   USUARIOS: 'carapungo_usuarios',
+  CATEGORIAS: 'carapungo_categorias',
 };
 
 const DB_VERSION = 1;
@@ -22,36 +23,36 @@ const DB_VERSION = 1;
 // Initialize WebSockets for Local Network Sync (KDS)
 let socket = null;
 try {
-  socket = io();
-  socket.on('connect', () => {
-    console.log('✅ Conectado al servidor KDS via WebSockets');
-  });
+  if (typeof io !== 'undefined') {
+    socket = io();
+    socket.on('connect', () => {
+      console.log('✅ Conectado al servidor KDS via WebSockets');
+    });
 
-  socket.on('sync-kds', (data) => {
-    const pedidos = getCollection(DB_KEYS.COCINA);
-    
-    if (data.action === 'added') {
-      const exists = pedidos.find(p => p.id === data.payload.id);
-      if (!exists) {
-        pedidos.push(data.payload);
-        saveCollection(DB_KEYS.COCINA, pedidos);
-        emit('cocina-added', data.payload);
+    socket.on('sync-kds', (data) => {
+      const pedidos = getCollection(DB_KEYS.COCINA);
+      
+      if (data.action === 'added') {
+        const exists = pedidos.find(p => p.id === data.payload.id);
+        if (!exists) {
+          pedidos.push(data.payload);
+          saveCollection(DB_KEYS.COCINA, pedidos);
+          emit('cocina-added', data.payload);
+        }
+      } else if (data.action === 'updated') {
+        const index = pedidos.findIndex(p => p.id === data.payload.id);
+        if (index !== -1) {
+          pedidos[index].estado = data.payload.estado;
+          saveCollection(DB_KEYS.COCINA, pedidos);
+          emit('cocina-updated', pedidos[index]);
+        } else {
+          pedidos.push(data.payload);
+          saveCollection(DB_KEYS.COCINA, pedidos);
+          emit('cocina-added', data.payload);
+        }
       }
-    } else if (data.action === 'updated') {
-      const index = pedidos.findIndex(p => p.id === data.payload.id);
-      if (index !== -1) {
-        pedidos[index].estado = data.payload.estado;
-        saveCollection(DB_KEYS.COCINA, pedidos);
-        emit('cocina-updated', pedidos[index]);
-      } else {
-        // En caso super extremo de que falte, se inserta
-        pedidos.push(data.payload);
-        saveCollection(DB_KEYS.COCINA, pedidos);
-        emit('cocina-added', data.payload);
-      }
-    }
-  });
-
+    });
+  }
 } catch(e) {
   console.warn('Socket.IO no está disponible temporalmente', e);
 }

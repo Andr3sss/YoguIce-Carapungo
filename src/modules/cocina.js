@@ -308,7 +308,7 @@ function updateTimers() {
 }
 
 function handleStorage(e) {
-  if (e.key === 'heladeria_cocina' || e.key === 'kds_ping' || e.key === 'heladeria_cuentas') {
+  if (e.key === 'carapungo_cocina' || e.key === 'kds_ping' || e.key === 'carapungo_cuentas') {
     handleCocinaUpdate();
   }
 }
