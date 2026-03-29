@@ -4,21 +4,63 @@ import {
   query, where, orderBy, serverTimestamp, getDocs, limit, deleteDoc
 } from "firebase/firestore";
 
+// ============================================================
+// 🧪 TEST MODE — Aislamiento completo de datos de producción
+// Controlado por VITE_TEST_MODE en .env (local = true, prod = false)
+// ============================================================
+const IS_TEST_MODE = import.meta.env.VITE_TEST_MODE === 'true';
+const TEST_PREFIX = IS_TEST_MODE ? 'test_' : '';
+
+// Colecciones OPERATIVAS → reciben prefijo en modo prueba
+// Colecciones de CATÁLOGO → siempre usan datos reales (productos, opciones, etc.)
+const OPERATIVE_FS_COLLECTIONS = {
+  jornadas:    IS_TEST_MODE ? 'test_jornadas'    : 'jornadas',
+  ventas:      IS_TEST_MODE ? 'test_ventas'      : 'ventas',
+  cuentas:     IS_TEST_MODE ? 'test_cuentas'     : 'cuentas',
+  cocina_kds:  IS_TEST_MODE ? 'test_cocina_kds'  : 'cocina_kds',
+  gastos:      IS_TEST_MODE ? 'test_gastos'      : 'gastos',
+};
+
+// Helper: obtener nombre de colección Firestore con aislamiento automático
+function col(name) {
+  return OPERATIVE_FS_COLLECTIONS[name] ?? name; // catálogo pasa tal cual
+}
+
+// localStorage keys → operativas con prefijo, catálogo sin prefijo
 const DB_KEYS = {
-  PRODUCTOS: 'carapungo_productos',
-  VENTAS: 'carapungo_ventas',
-  CIERRES: 'carapungo_cierres',
-  CUENTAS: 'carapungo_cuentas',
-  APERTURAS: 'carapungo_aperturas',
-  INSUMOS: 'carapungo_insumos',
-  COCINA: 'carapungo_cocina',
-  GASTOS: 'carapungo_gastos',
-  OPCIONES: 'carapungo_opciones',
-  USUARIOS: 'carapungo_usuarios',
+  PRODUCTOS:  'carapungo_productos',
+  OPCIONES:   'carapungo_opciones',
+  INSUMOS:    'carapungo_insumos',
+  USUARIOS:   'carapungo_usuarios',
   CATEGORIAS: 'carapungo_categorias',
+  // Operativas: aisladas en modo prueba
+  VENTAS:     `${TEST_PREFIX}carapungo_ventas`,
+  CIERRES:    `${TEST_PREFIX}carapungo_cierres`,
+  CUENTAS:    `${TEST_PREFIX}carapungo_cuentas`,
+  APERTURAS:  `${TEST_PREFIX}carapungo_aperturas`,
+  COCINA:     `${TEST_PREFIX}carapungo_cocina`,
+  GASTOS:     `${TEST_PREFIX}carapungo_gastos`,
 };
 
 const DB_VERSION = 1;
+
+// Inyectar banner visual si estamos en modo prueba
+if (IS_TEST_MODE && typeof document !== 'undefined') {
+  const _banner = document.createElement('div');
+  _banner.id = 'test-mode-banner';
+  _banner.innerHTML = '🧪 MODO PRUEBA ACTIVO — Los datos NO afectan producción';
+  _banner.style.cssText = [
+    'position:fixed', 'bottom:0', 'left:0', 'right:0', 'z-index:99999',
+    'background:#f59e0b', 'color:#000', 'text-align:center',
+    'font-size:13px', 'font-weight:800', 'padding:6px 0',
+    'letter-spacing:0.5px', 'pointer-events:none',
+  ].join(';');
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!document.getElementById('test-mode-banner')) {
+      document.body.appendChild(_banner);
+    }
+  });
+}
 
 // Initialize WebSockets for Local Network Sync (KDS)
 let socket = null;
@@ -342,18 +384,18 @@ const shadowStore = {
 let isSynced = false;
 
 export function startCloudSync() {
-  console.log('🔥 Iniciando Simbiosis con Firestore...');
+  console.log(`🔥 Iniciando Simbiosis con Firestore... ${IS_TEST_MODE ? '🧪 MODO PRUEBA' : '🚀 PRODUCCIÓN'}`);
 
   // Sync Jornadas (Aperturas/Cierres)
-  onSnapshot(collection(firestore, 'jornadas'), (snapshot) => {
+  onSnapshot(collection(firestore, col('jornadas')), (snapshot) => {
     shadowStore.aperturas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     saveCollection(DB_KEYS.APERTURAS, shadowStore.aperturas);
     emit('apertura-changed', getAperturaHoy());
   });
 
   // Sync Cuentas
-  console.log('📡 Subscribing to Cuentas onSnapshot...');
-  onSnapshot(collection(firestore, 'cuentas'), (snapshot) => {
+  console.log(`📡 Subscribing to Cuentas onSnapshot [${col('cuentas')}]...`);
+  onSnapshot(collection(firestore, col('cuentas')), (snapshot) => {
     console.log(`🔄 Firestore Sync: Received ${snapshot.docs.length} cuentas (Source: ${snapshot.metadata.hasPendingWrites ? 'Local' : 'Server'})`);
     shadowStore.cuentas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     saveCollection(DB_KEYS.CUENTAS, shadowStore.cuentas);
@@ -370,7 +412,7 @@ export function startCloudSync() {
   });
 
   // Sync Cocina (KDS)
-  onSnapshot(query(collection(firestore, 'cocina_kds'), orderBy('timestamp', 'asc')), (snapshot) => {
+  onSnapshot(query(collection(firestore, col('cocina_kds')), orderBy('timestamp', 'asc')), (snapshot) => {
     shadowStore.cocina = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     saveCollection(DB_KEYS.COCINA, shadowStore.cocina);
     emit('cocina-sync', shadowStore.cocina);
@@ -381,14 +423,14 @@ export function startCloudSync() {
   });
 
   // Sync Ventas (Last 500 for performance)
-  onSnapshot(query(collection(firestore, 'ventas'), orderBy('timestamp', 'desc'), limit(500)), (snapshot) => {
+  onSnapshot(query(collection(firestore, col('ventas')), orderBy('timestamp', 'desc'), limit(500)), (snapshot) => {
     shadowStore.ventas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     saveCollection(DB_KEYS.VENTAS, shadowStore.ventas);
     emit('sales-changed', shadowStore.ventas);
   });
 
   // Sync Gastos
-  onSnapshot(collection(firestore, 'gastos'), (snapshot) => {
+  onSnapshot(collection(firestore, col('gastos')), (snapshot) => {
     shadowStore.gastos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     saveCollection(DB_KEYS.GASTOS, shadowStore.gastos);
     emit('gastos-changed', shadowStore.gastos);
@@ -1008,7 +1050,7 @@ export async function createCuenta(mesa = null) {
   emit('cuentas-changed', cuentas);
 
   // Cloud write (awaited for cross-device sync)
-  await setDoc(doc(firestore, 'cuentas', id), cuenta);
+  await setDoc(doc(firestore, col('cuentas'), id), cuenta);
   
   return cuenta;
 }
@@ -1093,7 +1135,7 @@ export async function addItemToCuenta(cuentaId, producto, config = null) {
   emit('cuentas-changed', cuentas);
 
   // Cloud write (awaited for cross-device sync)
-  await updateDoc(doc(firestore, 'cuentas', cuenta.id), {
+  await updateDoc(doc(firestore, col('cuentas'), cuenta.id), {
     items: cuenta.items,
     total: cuenta.total
   });
@@ -1120,7 +1162,7 @@ export async function incrementItemQty(cuentaId, configIdOrProdId) {
   emit('cuentas-changed', cuentas);
 
   // Cloud write (awaited for cross-device sync)
-  await updateDoc(doc(firestore, 'cuentas', cuenta.id), {
+  await updateDoc(doc(firestore, col('cuentas'), cuenta.id), {
     items: cuenta.items,
     total: cuenta.total
   });
@@ -1176,7 +1218,7 @@ export async function deleteItemFromCuenta(cuentaId, configIdOrProdId) {
   emit('cuentas-changed', cuentas);
 
   // Cloud write (awaited for cross-device sync)
-  await updateDoc(doc(firestore, 'cuentas', cuenta.id), {
+  await updateDoc(doc(firestore, col('cuentas'), cuenta.id), {
     items: cuenta.items,
     total: cuenta.total
   });
@@ -1205,7 +1247,7 @@ export async function cobrarCuenta(cuentaId, metodoPago) {
   emit('cuentas-changed', cuentas);
 
   // Cloud write (awaited for cross-device sync)
-  await updateDoc(doc(firestore, 'cuentas', cuenta.id), cuenta);
+  await updateDoc(doc(firestore, col('cuentas'), cuenta.id), cuenta);
 
   // Generate sales in Cloud
   const newSales = [];
@@ -1225,7 +1267,7 @@ export async function cobrarCuenta(cuentaId, metodoPago) {
         cuenta_id: cuenta.id,
       };
       newSales.push(sale);
-      setDoc(doc(firestore, 'ventas', id), sale); // Fire and forget sales
+      setDoc(doc(firestore, col('ventas'), id), sale); // Fire and forget sales
     }
   });
 
@@ -1251,7 +1293,7 @@ export async function cancelarCuenta(cuentaId) {
   emit('cuentas-changed', cuentas);
 
   // Cloud write (awaited for cross-device sync)
-  await updateDoc(doc(firestore, 'cuentas', cuenta.id), cuenta);
+  await updateDoc(doc(firestore, col('cuentas'), cuenta.id), cuenta);
 
   return cuenta;
 }
@@ -1493,7 +1535,7 @@ export async function abrirDia(efectivoInicial = 0, inventarioInicial = []) {
   saveAperturas(aperturas);
   
   // Cloud write (async)
-  await setDoc(doc(firestore, 'jornadas', id), apertura);
+  await setDoc(doc(firestore, col('jornadas'), id), apertura);
 
   // Limpiar cocina de pedidos antiguos automáticamente al abrir el día
   await archivarPedidosAntiguosCocina();
@@ -1511,7 +1553,7 @@ export async function updateEfectivoInicial(newAmount) {
   saveAperturas(aperturas);
 
   // Cloud write
-  await updateDoc(doc(firestore, 'jornadas', apertura.id), {
+  await updateDoc(doc(firestore, col('jornadas'), apertura.id), {
     efectivo_inicial: apertura.efectivo_inicial
   });
 
@@ -1556,7 +1598,7 @@ export async function cerrarDia(dataCierre, inventarioFinal = []) {
   saveAperturas(aperturas);
 
   // Cloud write
-  await updateDoc(doc(firestore, 'jornadas', apertura.id), apertura);
+  await updateDoc(doc(firestore, col('jornadas'), apertura.id), apertura);
 
   addCierre({
     ...dataCierre,
@@ -1582,7 +1624,7 @@ export async function reabrirDia() {
 
   saveAperturas(aperturas);
   // Re-write to Cloud
-  await updateDoc(doc(firestore, 'jornadas', apertura.id), apertura);
+  await updateDoc(doc(firestore, col('jornadas'), apertura.id), apertura);
   
   emit('apertura-changed', apertura);
   return apertura;
@@ -1631,10 +1673,10 @@ export async function enviarACocina(cuentaId) {
     saveCollection(DB_KEYS.COCINA, pedidos);
     
     // Cloud update
-    await updateDoc(doc(firestore, 'cocina_kds', pedido.id), {
+    await updateDoc(doc(firestore, col('cocina_kds'), pedido.id), {
       items: pedido.items,
       timestamp: pedido.timestamp,
-      mesa: cuenta.mesa // Asegurar que se actualice la mesa si cambia (aunque usualmente no cambia)
+      mesa: cuenta.mesa
     });
     
     localStorage.setItem('kds_ping', Date.now().toString());
@@ -1660,7 +1702,7 @@ export async function enviarACocina(cuentaId) {
     saveCollection(DB_KEYS.COCINA, pedidos);
     
     // Cloud write
-    await setDoc(doc(firestore, 'cocina_kds', id), nuevoPedido);
+    await setDoc(doc(firestore, col('cocina_kds'), id), nuevoPedido);
     
     localStorage.setItem('kds_ping', Date.now().toString());
     emit('cocina-added', nuevoPedido);
@@ -1681,7 +1723,7 @@ export async function actualizarItemCocina(pedidoId, itemIndex, preparado) {
     saveCollection(DB_KEYS.COCINA, pedidos);
     
     // Cloud write
-    await updateDoc(doc(firestore, 'cocina_kds', pedidoId), {
+    await updateDoc(doc(firestore, col('cocina_kds'), pedidoId), {
       items: pedido.items
     });
     
@@ -1720,7 +1762,7 @@ export async function actualizarEstadoCocina(pedidoId, nuevoEstado) {
     saveCollection(DB_KEYS.COCINA, pedidos);
     
     // Cloud update
-    await updateDoc(doc(firestore, 'cocina_kds', pedidoId), { estado: nuevoEstado });
+    await updateDoc(doc(firestore, col('cocina_kds'), pedidoId), { estado: nuevoEstado });
     
     localStorage.setItem('kds_ping', Date.now().toString());
     if (socket) {
@@ -1740,7 +1782,7 @@ export async function cancelarPedidoCocina(cuentaId) {
   if (kdsPedidos.length > 0) {
     for (const pedido of kdsPedidos) {
       pedido.estado = 'cancelado';
-      await updateDoc(doc(firestore, 'cocina_kds', pedido.id), { estado: 'cancelado' });
+      await updateDoc(doc(firestore, col('cocina_kds'), pedido.id), { estado: 'cancelado' });
     }
     
     saveCollection(DB_KEYS.COCINA, pedidos);
@@ -1768,7 +1810,7 @@ export async function archivarPedidosAntiguosCocina() {
       p.estado = 'listo';
       changed = true;
       // Cloud update sin await para que sea rápido (optimistic approach)
-      updateDoc(doc(firestore, 'cocina_kds', p.id), { estado: 'listo' }).catch(console.error);
+      updateDoc(doc(firestore, col('cocina_kds'), p.id), { estado: 'listo' }).catch(console.error);
     }
   }
 
@@ -1804,7 +1846,7 @@ export async function addGasto(gasto) {
   saveCollection(DB_KEYS.GASTOS, shadowStore.gastos);
   
   // Cloud write
-  await setDoc(doc(firestore, 'gastos', id), nuevoGasto);
+  await setDoc(doc(firestore, col('gastos'), id), nuevoGasto);
   
   emit('gastos-changed', shadowStore.gastos);
   return nuevoGasto;
@@ -1973,7 +2015,9 @@ export function setCurrentUser(user) {
  * PRESERVES: Category, Products, Options, Insumos, Users.
  */
 export async function resetToProduction() {
-  const collectionsToClear = ['ventas', 'jornadas', 'cuentas', 'cocina_kds', 'gastos'];
+  const collectionsBaseNames = ['ventas', 'jornadas', 'cuentas', 'cocina_kds', 'gastos'];
+  // En modo prueba limpiará test_ventas, test_jornadas etc. En producción las reales.
+  const collectionsToClear = collectionsBaseNames.map(c => col(c));
   const localKeysToClear = [
     DB_KEYS.VENTAS, 
     DB_KEYS.APERTURAS, 
@@ -1983,7 +2027,7 @@ export async function resetToProduction() {
     DB_KEYS.CIERRES
   ];
 
-  console.log("🧹 Iniciando limpieza de base de datos...");
+  console.log(`🧹 Iniciando limpieza de base de datos... [${IS_TEST_MODE ? 'MODO PRUEBA' : 'PRODUCCIÓN'}]`);
 
   // 1. Clear Local Storage
   localKeysToClear.forEach(key => localStorage.removeItem(key));

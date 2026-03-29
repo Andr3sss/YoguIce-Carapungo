@@ -94,7 +94,14 @@ export function render() {
               <h3>No se encontraron productos</h3>
               <p>Cambia el filtro o añade un producto nuevo</p>
             </div>
-          ` : filteredProducts.map(p => `
+          ` : filteredProducts.map(p => {
+            const isPromoCard = p.categoria === 'PROMOCIONES';
+            const promoInfo = isPromoCard && p.opciones?.promo
+              ? `🏆 Combo ×${p.opciones.promo.cantidad} · ${p.opciones.promo.label || 'Producto'} · ${p.opciones.promo.perProduct?.sabores?.max || 0} sab + ${p.opciones.promo.perProduct?.coberturas?.max || 0} cob c/u`
+              : p.opciones
+                ? `⚙️ ${p.opciones.sabores?.max || 0} Sabores · ${p.opciones.toppings?.max || 0} Toppings · ${p.opciones.coberturas?.max || 0} Coberturas`
+                : 'Configuración estándar';
+            return `
             <div class="admin-product-card ${!p.activo ? 'inactive' : ''}">
               <div class="card-top">
                 <div class="card-emoji">${p.emoji || '🍦'}</div>
@@ -108,12 +115,8 @@ export function render() {
                 </label>
               </div>
               
-              <div style="font-size: 11px; color: var(--text-secondary); background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px;">
-                ${p.opciones ? `
-                  ⚙️ ${p.opciones.sabores?.max || 0} Sabores · 
-                  ${p.opciones.toppings?.max || 0} Toppings · 
-                  ${p.opciones.coberturas?.max || 0} Coberturas
-                ` : 'Configuración estándar'}
+              <div style="font-size: 11px; color: ${isPromoCard ? 'var(--accent-mint)' : 'var(--text-secondary)'}; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px;">
+                ${promoInfo}
               </div>
 
               <div class="card-actions">
@@ -121,7 +124,8 @@ export function render() {
                 <button class="btn btn-ghost btn-sm" data-delete-id="${p.id}" style="color: var(--danger);">🗑️</button>
               </div>
             </div>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
       </div>
     </div>
@@ -307,12 +311,19 @@ function renderConfigPanelContent() {
     nombre: '',
     precio: 0,
     categoria: activeCategory,
-    emoji: '🍦',
+    emoji: activeCategory === 'PROMOCIONES' ? '🏆' : '🍦',
     activo: true,
-    opciones: { sabores: {min:0, max:0}, toppings: {min:0, max:0}, coberturas: {min:0, max:0}, extras: [], incluye_desc: '' }
+    opciones: activeCategory === 'PROMOCIONES'
+      ? { promo: { cantidad: 2, label: 'Producto', perProduct: { sabores: {min:1, max:1}, coberturas: {min:1, max:1}, toppings: {min:0, max:0} } }, sabores: {min:2, max:2}, coberturas: {min:2, max:2}, toppings: {min:0, max:0}, incluye_desc: '' }
+      : { sabores: {min:0, max:0}, toppings: {min:0, max:0}, coberturas: {min:0, max:0}, extras: [], incluye_desc: '' }
   } : db.getProductById(editingId);
 
   if (!p) return '';
+
+  // ── Si es PROMOCIONES, delegar al panel especializado ──
+  if (p.categoria === 'PROMOCIONES') {
+    return renderPromoConfigPanel(p);
+  }
 
   return `
     <div class="config-panel-header">
@@ -320,14 +331,13 @@ function renderConfigPanelContent() {
         <span style="font-size: 32px;">${p.emoji || '🍦'}</span>
         <div>
           <h3 style="margin:0;">Configurar</h3>
-          <p style="margin:0; font-size: 13px; color: var(--text-muted);">${p.nombre}</p>
+          <p style="margin:0; font-size: 13px; color: var(--text-muted);">${p.nombre || 'Nuevo Producto'}</p>
         </div>
       </div>
       <button class="modal-close" id="btn-close-config">&times;</button>
     </div>
 
     <div class="config-panel-body">
-      <!-- Datos Básicos -->
       <!-- Datos Básicos -->
       <div class="config-group" style="position:relative; overflow:visible;">
         <label class="config-label">📝 Datos Generales</label>
@@ -345,7 +355,7 @@ function renderConfigPanelContent() {
           
           <div style="width: 100px;">
             <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 6px;">Precio ($)</label>
-            <input type="number" id="config-price" class="form-input" value="${p.precio}" step="0.01" style="font-size: 15px; font-weight: bold; color: var(--accent-mint); text-align: center; padding: 12px; margin:0;" />
+            <input type="number" id="config-price" class="form-input" value="${p.precio}" step="0.01" min="0" style="font-size: 15px; font-weight: bold; color: var(--accent-mint); text-align: center; padding: 12px; margin:0;" />
           </div>
         </div>
 
@@ -419,7 +429,7 @@ function renderConfigPanelContent() {
             return `
               <label class="config-chip" style="display:flex; align-items:center; gap:8px; cursor:pointer; transition: 0.2s ease; ${isEnabled ? 'background:var(--accent-pink-glow); border-color:var(--accent-pink); color: #fff;' : 'background: rgba(0,0,0,0.2);'}">
                 <input type="checkbox" class="extra-check" data-extra="${ex.nombre}" ${isEnabled ? 'checked' : ''} style="accent-color: var(--accent-pink); transform: scale(1.2);" />
-                <span>${ex.nombre} <b style="color:var(--accent-mint);">(+$${ex.precio.toFixed(2)})</b></span>
+                <span>${ex.nombre} <b style="color:var(--accent-mint);">+$${ex.precio.toFixed(2)}</b></span>
               </label>
             `;
           }).join('')}
@@ -437,6 +447,187 @@ function renderConfigPanelContent() {
     <div class="config-footer">
       <button class="btn btn-ghost" id="btn-config-cancel">Cancelar</button>
       <button class="btn btn-primary" id="btn-config-save">Guardar Cambios</button>
+    </div>
+  `;
+}
+
+// ============================================================
+// 🏆 Panel especializado para PROMOCIONES (combos)
+// ============================================================
+function renderPromoConfigPanel(p) {
+  const promo  = p.opciones?.promo || {};
+  const pp     = promo.perProduct || {};
+  const cant   = promo.cantidad || 2;
+  const lbl    = promo.label   || 'Producto';
+
+  const sabMin = pp.sabores?.min   ?? 1;
+  const sabMax = pp.sabores?.max   ?? 1;
+  const cobMin = pp.coberturas?.min ?? 1;
+  const cobMax = pp.coberturas?.max ?? 1;
+  const topMin = pp.toppings?.min  ?? 0;
+  const topMax = pp.toppings?.max  ?? 0;
+
+  return `
+    <div class="config-panel-header">
+      <div style="display:flex; align-items:center; gap: 12px;">
+        <span style="font-size: 32px;">${p.emoji || '🏆'}</span>
+        <div>
+          <h3 style="margin:0;">🏆 Configurar Promo</h3>
+          <p style="margin:0; font-size: 13px; color: var(--accent-mint);">${p.nombre || 'Nueva Promoción'}</p>
+        </div>
+      </div>
+      <button class="modal-close" id="btn-close-config">&times;</button>
+    </div>
+
+    <div class="config-panel-body">
+
+      <!-- ── Sección A: Datos Generales ── -->
+      <div class="config-group" style="position:relative; overflow:visible;">
+        <label class="config-label">📝 Datos de la Promoción</label>
+        <div style="display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; align-items:flex-end; position:relative; z-index:5;">
+
+          <div style="width:80px;">
+            <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:6px;">Emoji</label>
+            <input type="text" id="config-emoji" class="form-input" value="${p.emoji || '🏆'}"
+              style="text-align:center; font-size:24px; padding:8px; border-radius:12px; background:rgba(0,0,0,0.2); margin:0;" />
+          </div>
+
+          <div style="flex:1; min-width:150px;">
+            <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:6px;">Nombre de la Promoción</label>
+            <input type="text" id="config-name" class="form-input" value="${p.nombre}"
+              placeholder="Ej: Promo 2 Copas Queso"
+              style="font-size:14px; padding:12px; margin:0;" />
+          </div>
+
+          <div style="width:110px;">
+            <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:6px;">Precio ($)</label>
+            <input type="number" id="config-price" class="form-input" value="${p.precio}"
+              step="0.01" min="0"
+              style="font-size:15px; font-weight:bold; color:var(--accent-mint); text-align:center; padding:12px; margin:0;" />
+          </div>
+        </div>
+        <div style="position:absolute; top:-20px; right:-10px; font-size:90px; opacity:0.04; pointer-events:none; z-index:1;">${p.emoji || '🏆'}</div>
+      </div>
+
+      <!-- ── Sección B: Configuración del Combo ── -->
+      <div class="config-group" style="border: 1px solid rgba(var(--accent-mint-rgb, 78,205,196), 0.25); border-radius:12px; background: rgba(78,205,196,0.04);">
+        <div class="config-label-row">
+          <label class="config-label" style="color:var(--accent-mint);">🏆 Estructura del Combo</label>
+          <span class="config-badge" style="background:rgba(78,205,196,0.15); color:var(--accent-mint);">PROMOCIÓN</span>
+        </div>
+        <p style="font-size:11px; color:var(--text-muted); margin-top:-4px;">Define cuántos sub-productos incluye este combo y cómo se llaman.</p>
+
+        <div style="display:flex; gap:12px; margin-top:14px; flex-wrap:wrap;">
+
+          <div style="flex:1; min-width:120px;">
+            <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:8px;">Cantidad de productos en el combo</label>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <button type="button" id="btn-promo-cant-minus" style="width:36px; height:36px; border-radius:50%; border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.3); color:#fff; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center;">−</button>
+              <input type="number" id="promo-cantidad" class="limit-field" value="${cant}" min="2" max="10"
+                style="width:64px; text-align:center; font-size:22px; font-weight:800; color:var(--accent-mint); background:rgba(0,0,0,0.3); border-radius:8px;" />
+              <button type="button" id="btn-promo-cant-plus" style="width:36px; height:36px; border-radius:50%; border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.3); color:#fff; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center;">+</button>
+            </div>
+          </div>
+
+          <div style="flex:2; min-width:160px;">
+            <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:8px;">Nombre genérico del sub-producto</label>
+            <input type="text" id="promo-label" class="form-input" value="${lbl}"
+              placeholder="Ej: Copa, Waffle, Tulipán..."
+              style="font-size:14px; padding:10px; margin:0; text-transform:capitalize;" />
+            <span style="font-size:10px; color:var(--text-muted); display:block; margin-top:4px;">Se mostrará como: Producto 1 · Producto 2 · ...</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── Sección C: Opciones por cada sub-producto ── -->
+      <div class="config-group">
+        <div class="config-label-row">
+          <label class="config-label">⚙️ Opciones por cada sub-producto</label>
+          <span class="config-badge" id="promo-sublabel-badge">Por cada ${lbl}</span>
+        </div>
+        <p style="font-size:11px; color:var(--text-muted); margin-top:-4px;">
+          Define cuántos sabores, coberturas y toppings puede pedir el cliente <b>por cada sub-producto</b> del combo.
+        </p>
+
+        <div style="display:flex; flex-direction:column; gap:10px; margin-top:14px;">
+
+          <!-- Sabores -->
+          <div style="background:rgba(0,0,0,0.2); border-radius:10px; padding:12px 14px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+              <span style="font-size:16px;">🍨</span>
+              <span style="font-size:13px; font-weight:600;">Sabores de helado</span>
+            </div>
+            <div class="config-limits" style="margin-top:0;">
+              <div class="limit-input-group">
+                <label>Mínimo obligatorio</label>
+                <input type="number" id="promo-sab-min" class="limit-field" value="${sabMin}" min="0" />
+              </div>
+              <div class="limit-input-group">
+                <label>Máximo permitido</label>
+                <input type="number" id="promo-sab-max" class="limit-field" value="${sabMax}" min="0" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Coberturas -->
+          <div style="background:rgba(0,0,0,0.2); border-radius:10px; padding:12px 14px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+              <span style="font-size:16px;">🍯</span>
+              <span style="font-size:13px; font-weight:600;">Coberturas líquidas</span>
+            </div>
+            <div class="config-limits" style="margin-top:0;">
+              <div class="limit-input-group">
+                <label>Mínimo obligatorio</label>
+                <input type="number" id="promo-cob-min" class="limit-field" value="${cobMin}" min="0" />
+              </div>
+              <div class="limit-input-group">
+                <label>Máximo permitido</label>
+                <input type="number" id="promo-cob-max" class="limit-field" value="${cobMax}" min="0" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Toppings -->
+          <div style="background:rgba(0,0,0,0.2); border-radius:10px; padding:12px 14px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+              <span style="font-size:16px;">🍬</span>
+              <span style="font-size:13px; font-weight:600;">Toppings</span>
+            </div>
+            <div class="config-limits" style="margin-top:0;">
+              <div class="limit-input-group">
+                <label>Mínimo obligatorio</label>
+                <input type="number" id="promo-top-min" class="limit-field" value="${topMin}" min="0" />
+              </div>
+              <div class="limit-input-group">
+                <label>Máximo permitido</label>
+                <input type="number" id="promo-top-max" class="limit-field" value="${topMax}" min="0" />
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Totales calculados automáticamente -->
+        <div id="promo-totals-preview" style="margin-top:14px; background:rgba(78,205,196,0.08); border:1px solid rgba(78,205,196,0.2); border-radius:8px; padding:10px 14px; font-size:11px; color:var(--text-muted);">
+          📊 <b style="color:var(--accent-mint);">Total del combo:</b>
+          ${cant} × (${sabMax} sab + ${cobMax} cob + ${topMax} top)
+          = <b style="color:#fff;">${cant * sabMax} sabores · ${cant * cobMax} coberturas · ${cant * topMax} toppings</b>
+        </div>
+      </div>
+
+      <!-- ── Sección D: Descripción para cocina ── -->
+      <div class="config-group">
+        <label class="config-label">📝 Descripción para Cocina</label>
+        <p style="font-size:11px; color:var(--text-muted); margin-top:-4px;">¿Qué incluye este combo? (Se mostrará en cocina y en el ticket).</p>
+        <textarea id="config-desc" class="form-input" style="height:60px; font-size:13px; resize:none; border-radius:8px;">${p.opciones?.incluye_desc || ''}</textarea>
+      </div>
+
+    </div>
+
+    <div class="config-footer">
+      <button class="btn btn-ghost" id="btn-config-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="btn-config-save">💾 Guardar Promo</button>
     </div>
   `;
 }
@@ -754,54 +945,102 @@ export function init() {
   const btnSaveConfig = document.getElementById('btn-config-save');
   if (btnSaveConfig) {
     btnSaveConfig.addEventListener('click', async () => {
-      const nombre = document.getElementById('config-name').value.trim();
-      const emoji = document.getElementById('config-emoji').value.trim() || '🍦';
-      const precio = parseFloat(document.getElementById('config-price').value) || 0;
-      const incluye_desc = document.getElementById('config-desc').value.trim();
-      
-      const extras = Array.from(document.querySelectorAll('.extra-check:checked')).map(el => el.dataset.extra);
-      
-      const opciones = {
-        sabores: {
-          min: parseInt(document.getElementById('limit-sabores-min').value) || 0,
-          max: parseInt(document.getElementById('limit-sabores-max').value) || 0
-        },
-        coberturas: {
-          min: parseInt(document.getElementById('limit-coberturas-min').value) || 0,
-          max: parseInt(document.getElementById('limit-coberturas-max').value) || 0
-        },
-        toppings: {
-          min: parseInt(document.getElementById('limit-toppings-min').value) || 0,
-          max: parseInt(document.getElementById('limit-toppings-max').value) || 0
-        },
-        extras,
-        incluye_desc
-      };
+      const nombre = document.getElementById('config-name')?.value.trim();
+      const emoji  = document.getElementById('config-emoji')?.value.trim() || '🍦';
+      const precio = parseFloat(document.getElementById('config-price')?.value) || 0;
+      const incluye_desc = document.getElementById('config-desc')?.value.trim() || '';
 
       if (!nombre) {
         window.showToast('❌ El nombre es obligatorio', 'error');
         return;
       }
 
+      // ── Detectar si es PROMOCIÓN ──
+      const isPromoSave = activeCategory === 'PROMOCIONES' ||
+        (editingId !== -1 && db.getProductById(editingId)?.categoria === 'PROMOCIONES');
+
+      let opciones;
+
+      if (isPromoSave) {
+        // Leer campos del panel de promo
+        const cantidad  = Math.max(2, parseInt(document.getElementById('promo-cantidad')?.value) || 2);
+        const label     = document.getElementById('promo-label')?.value.trim() || 'Producto';
+        const sabMin    = parseInt(document.getElementById('promo-sab-min')?.value)  || 0;
+        const sabMax    = parseInt(document.getElementById('promo-sab-max')?.value)  || 0;
+        const cobMin    = parseInt(document.getElementById('promo-cob-min')?.value)  || 0;
+        const cobMax    = parseInt(document.getElementById('promo-cob-max')?.value)  || 0;
+        const topMin    = parseInt(document.getElementById('promo-top-min')?.value)  || 0;
+        const topMax    = parseInt(document.getElementById('promo-top-max')?.value)  || 0;
+
+        const perProduct = {
+          sabores:    { min: sabMin,  max: sabMax  },
+          coberturas: { min: cobMin,  max: cobMax  },
+          toppings:   { min: topMin,  max: topMax  },
+        };
+
+        // Los totales se calculan automáticamente para compatibilidad con ventas.js
+        opciones = {
+          promo: { cantidad, label, perProduct },
+          sabores:    { min: cantidad * sabMin, max: cantidad * sabMax },
+          coberturas: { min: cantidad * cobMin, max: cantidad * cobMax },
+          toppings:   { min: cantidad * topMin, max: cantidad * topMax },
+          incluye_desc,
+        };
+      } else {
+        // Panel estándar
+        const extras = Array.from(document.querySelectorAll('.extra-check:checked')).map(el => el.dataset.extra);
+        opciones = {
+          sabores:    { min: parseInt(document.getElementById('limit-sabores-min')?.value)    || 0, max: parseInt(document.getElementById('limit-sabores-max')?.value)    || 0 },
+          coberturas: { min: parseInt(document.getElementById('limit-coberturas-min')?.value) || 0, max: parseInt(document.getElementById('limit-coberturas-max')?.value) || 0 },
+          toppings:   { min: parseInt(document.getElementById('limit-toppings-min')?.value)   || 0, max: parseInt(document.getElementById('limit-toppings-max')?.value)   || 0 },
+          extras,
+          incluye_desc,
+        };
+      }
+
       if (editingId === -1) {
-        // Create new
-        await db.addProduct({
-          nombre,
-          precio,
-          emoji,
-          categoria: activeCategory,
-          activo: true,
-          opciones
-        });
+        await db.addProduct({ nombre, precio, emoji, categoria: activeCategory, activo: true, opciones });
         window.showToast('✨ Producto creado exitosamente', 'success');
       } else {
-        // Update existing
         await db.updateProduct(editingId, { nombre, precio, emoji, opciones });
         window.showToast('✅ Configuración guardada', 'success');
       }
       close();
     });
   }
+
+  // ── Controles interactivos del panel de promo ──
+  // Botones +/− para la cantidad de sub-productos
+  document.getElementById('btn-promo-cant-plus')?.addEventListener('click', () => {
+    const inp = document.getElementById('promo-cantidad');
+    if (inp) { inp.value = Math.min(10, (parseInt(inp.value) || 2) + 1); updatePromoTotalsPreview(); }
+  });
+  document.getElementById('btn-promo-cant-minus')?.addEventListener('click', () => {
+    const inp = document.getElementById('promo-cantidad');
+    if (inp) { inp.value = Math.max(2, (parseInt(inp.value) || 2) - 1); updatePromoTotalsPreview(); }
+  });
+  // Actualizar preview cuando cambian los campos numéricos o el label
+  ['promo-cantidad','promo-sab-max','promo-cob-max','promo-top-max'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', updatePromoTotalsPreview);
+  });
+  document.getElementById('promo-label')?.addEventListener('input', () => {
+    const badge = document.getElementById('promo-sublabel-badge');
+    const lbl = document.getElementById('promo-label')?.value.trim() || 'Producto';
+    if (badge) badge.textContent = `Por cada ${lbl}`;
+    updatePromoTotalsPreview();
+  });
+}
+
+function updatePromoTotalsPreview() {
+  const preview = document.getElementById('promo-totals-preview');
+  if (!preview) return;
+  const cant   = parseInt(document.getElementById('promo-cantidad')?.value) || 2;
+  const sabMax = parseInt(document.getElementById('promo-sab-max')?.value)  || 0;
+  const cobMax = parseInt(document.getElementById('promo-cob-max')?.value)  || 0;
+  const topMax = parseInt(document.getElementById('promo-top-max')?.value)  || 0;
+  preview.innerHTML = `📊 <b style="color:var(--accent-mint);">Total del combo:</b>
+    ${cant} × (${sabMax} sab + ${cobMax} cob + ${topMax} top)
+    = <b style="color:#fff;">${cant * sabMax} sabores · ${cant * cobMax} coberturas · ${cant * topMax} toppings</b>`;
 }
 
 function rerender() {
