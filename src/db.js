@@ -443,12 +443,10 @@ export function startCloudSync() {
       saveCollection(DB_KEYS.INSUMOS, insumos);
       emit('insumos-changed', insumos);
     } else {
-      // Seed Firestore with real default insumos if it's empty
+      // Nube vacía — usar localStorage o defaults como fallback (NO auto-seed)
+      console.warn('⚠️ Firestore insumos vacíos — usando caché local como fallback.');
       const local = getCollection(DB_KEYS.INSUMOS);
-      const toSeed = local.length > 0 ? local : DEFAULT_INSUMOS;
-      toSeed.forEach(ins => {
-        addDoc(collection(firestore, 'insumos'), { id: ins.id, nombre: ins.nombre, activo: ins.activo }).catch(console.error);
-      });
+      emit('insumos-changed', local.length > 0 ? local : DEFAULT_INSUMOS);
     }
   }, (err) => console.error('❌ Firestore Insumos Sync Error:', err));
 
@@ -467,14 +465,10 @@ export function startCloudSync() {
       saveCollection(DB_KEYS.PRODUCTOS, shadowStore.productos);
       emit('products-changed', shadowStore.productos);
     } else {
-      // Si la nube está vacía pero local tiene datos, subirlos (seed)
+      // Nube vacía — usar localStorage como fallback (NO auto-seed a Firestore)
+      console.warn('⚠️ Firestore productos vacíos — usando caché local como fallback.');
       const localProds = getCollection(DB_KEYS.PRODUCTOS);
-      if (localProds.length > 0) {
-        console.log("📤 Subiendo productos locales a la nube como semilla...");
-        localProds.forEach(p => {
-          setDoc(doc(firestore, 'productos', p.id.toString()), p).catch(console.error);
-        });
-      }
+      emit('products-changed', localProds);
     }
   }, (error) => {
     console.error('❌ Firestore Productos Sync Error:', error);
@@ -488,14 +482,10 @@ export function startCloudSync() {
       saveCollection(DB_KEYS.OPCIONES, ops);
       emit('opciones-changed', ops);
     } else {
-      // Seed if cloud is empty
+      // Nube vacía — usar localStorage como fallback (NO auto-seed a Firestore)
+      console.warn('⚠️ Firestore opciones vacíos — usando caché local como fallback.');
       const localOps = getCollection(DB_KEYS.OPCIONES);
-      if (localOps.length > 0) {
-        console.log("📤 Subiendo opciones locales a la nube como semilla...");
-        localOps.forEach(o => {
-          setDoc(doc(firestore, 'opciones', o.id.toString()), o).catch(console.error);
-        });
-      }
+      emit('opciones-changed', localOps);
     }
   }, (error) => {
     console.error('❌ Firestore Opciones Sync Error:', error);
@@ -509,14 +499,10 @@ export function startCloudSync() {
       saveCollection(DB_KEYS.USUARIOS, shadowStore.usuarios);
       emit('users-changed', shadowStore.usuarios);
     } else {
-      // Seed if cloud is empty
+      // Nube vacía — usar localStorage como fallback (NO auto-seed a Firestore)
+      console.warn('⚠️ Firestore usuarios vacíos — usando caché local como fallback.');
       const localUsers = getCollection(DB_KEYS.USUARIOS);
-      if (localUsers.length > 0) {
-        console.log("📤 Subiendo usuarios locales a la nube como semilla...");
-        localUsers.forEach(u => {
-          setDoc(doc(firestore, 'usuarios', u.id.toString()), u).catch(console.error);
-        });
-      }
+      emit('users-changed', localUsers);
     }
   }, (error) => {
     console.error('❌ Firestore Usuarios Sync Error:', error);
