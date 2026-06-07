@@ -69,6 +69,13 @@ function soundCancel() {
   setTimeout(() => playTone(440, 0.25, 'triangle', 0.22), 300); // A4 — low finish
 }
 
+// ⏰ REMINDER — Distinct attention chime (alarm-like, repeats high note)
+function soundReminder() {
+  playTone(988, 0.18, 'triangle', 0.42);    // B5
+  setTimeout(() => playTone(988, 0.18, 'triangle', 0.42), 240);  // B5 again
+  setTimeout(() => playTone(1319, 0.38, 'triangle', 0.40), 480); // E6 — sustained finish
+}
+
 // ── Sound map ────────────────────────────────────────────
 
 const SOUND_FUNCTIONS = {
@@ -76,6 +83,7 @@ const SOUND_FUNCTIONS = {
   'update-order': soundUpdateOrder,
   'payment':      soundPayment,
   'cancel':       soundCancel,
+  'reminder':     soundReminder,
 };
 
 /**

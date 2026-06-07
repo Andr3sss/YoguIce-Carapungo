@@ -33,6 +33,7 @@ const DB_KEYS = {
   INSUMOS:    'carapungo_insumos',
   USUARIOS:   'carapungo_usuarios',
   CATEGORIAS: 'carapungo_categorias',
+  RECORDATORIOS: 'carapungo_recordatorios',
   // Operativas: aisladas en modo prueba
   VENTAS:     `${TEST_PREFIX}carapungo_ventas`,
   CIERRES:    `${TEST_PREFIX}carapungo_cierres`,
@@ -379,6 +380,7 @@ const shadowStore = {
   productos: [],
   categorias: [],
   usuarios: [],
+  recordatorios: [],
 };
 
 let isSynced = false;
@@ -506,6 +508,15 @@ export function startCloudSync() {
     }
   }, (error) => {
     console.error('❌ Firestore Usuarios Sync Error:', error);
+  });
+
+  // Sync Recordatorios (avisos programados)
+  onSnapshot(collection(firestore, 'recordatorios'), (snapshot) => {
+    shadowStore.recordatorios = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    saveCollection(DB_KEYS.RECORDATORIOS, shadowStore.recordatorios);
+    emit('recordatorios-changed', shadowStore.recordatorios);
+  }, (error) => {
+    console.error('❌ Firestore Recordatorios Sync Error:', error);
   });
 
   isSynced = true;
@@ -1990,6 +2001,72 @@ export function setCurrentUser(user) {
     localStorage.removeItem('carapungo_current_user');
   }
   emit('user-logged-in', user);
+}
+
+// ========================================
+// ⏰ Recordatorios CRUD
+// ========================================
+// Un recordatorio se dispara a una hora fija. tipo:
+//   'unico'   → suena una sola vez en una fecha exacta (campo fecha)
+//   'diario'  → suena todos los días a la hora indicada
+//   'semanal' → suena los días de la semana marcados (campo dias: [0..6], 0=Dom)
+
+export function getRecordatorios() {
+  return getCollection(DB_KEYS.RECORDATORIOS);
+}
+
+export async function addRecordatorio(data) {
+  const id = generateId();
+  const recordatorio = {
+    id,
+    texto: data.texto,                       // título
+    nota: data.nota || '',                   // detalle opcional
+    tipo: data.tipo,                         // 'unico' | 'diario' | 'semanal'
+    hora: data.hora,                         // 'HH:MM'
+    fecha: data.fecha || null,               // solo 'unico'
+    dias: data.dias || [],                   // solo 'semanal' (0=Dom .. 6=Sab)
+    prioridad: data.prioridad || 'normal',   // 'baja' | 'normal' | 'alta'
+    activo: data.activo !== false,
+    creado_por: data.creado_por || 'Sistema',
+    timestamp: Date.now(),
+  };
+
+  // Shadow write (local)
+  const list = getRecordatorios();
+  list.push(recordatorio);
+  saveCollection(DB_KEYS.RECORDATORIOS, list);
+  emit('recordatorios-changed', list);
+
+  // Cloud write
+  await setDoc(doc(firestore, 'recordatorios', id), recordatorio);
+  return recordatorio;
+}
+
+export async function updateRecordatorio(id, updates) {
+  const list = getRecordatorios();
+  const idx = list.findIndex(r => r.id === id);
+  if (idx === -1) return null;
+  list[idx] = { ...list[idx], ...updates };
+
+  // Shadow write (local)
+  saveCollection(DB_KEYS.RECORDATORIOS, list);
+  emit('recordatorios-changed', list);
+
+  // Cloud update
+  await updateDoc(doc(firestore, 'recordatorios', id.toString()), updates);
+  return list[idx];
+}
+
+export async function deleteRecordatorio(id) {
+  let list = getRecordatorios();
+  list = list.filter(r => r.id !== id);
+
+  // Shadow write (local)
+  saveCollection(DB_KEYS.RECORDATORIOS, list);
+  emit('recordatorios-changed', list);
+
+  // Cloud delete
+  await deleteDoc(doc(firestore, 'recordatorios', id.toString()));
 }
 
 // ========================================

@@ -16,6 +16,7 @@ import * as productos from './modules/productos.js';
 import * as estadisticas from './modules/estadisticas.js';
 import * as cocina from './modules/cocina.js';
 import * as gastos from './modules/gastos.js';
+import * as recordatorios from './modules/recordatorios.js';
 import * as auth from './modules/auth.js';
 import { preloadSounds, playSound } from './modules/sounds.js';
 
@@ -175,6 +176,7 @@ const modules = {
   estadisticas,
   cocina,
   gastos,
+  recordatorios,
 };
 
 let currentPage = 'ventas';
@@ -247,8 +249,8 @@ function checkPermissions() {
     if (role === 'mesero') {
       const isDesktopView = window.innerWidth > 900; // Umbral para detectar "Vista de Escritorio" en móviles
       const extraAllowed = isDesktopView && ['cuadre', 'gastos', 'historialVentas'].includes(page);
-      
-      if (page !== 'ventas' && page !== 'cocina' && !extraAllowed) {
+
+      if (page !== 'ventas' && page !== 'cocina' && page !== 'recordatorios' && !extraAllowed) {
         allowed = false;
       }
     }
@@ -345,6 +347,168 @@ function updateAperturaStatus() {
 }
 
 // ========================================
+// ⏰ Recordatorios — disparador global
+// ========================================
+// Cada dispositivo revisa los recordatorios sincronizados y dispara
+// localmente cuando coincide la hora. Un guard en localStorage evita
+// que el mismo recordatorio suene dos veces en el mismo día/dispositivo.
+
+const REMINDERS_FIRED_KEY = 'carapungo_recordatorios_fired';
+
+function getFiredSet() {
+  try {
+    const today = db.getLocalDate();
+    const raw = JSON.parse(localStorage.getItem(REMINDERS_FIRED_KEY) || '[]');
+    // Conservamos solo las marcas de hoy (limpieza automática)
+    return new Set(raw.filter(k => k.endsWith(`_${today}`)));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveFiredSet(set) {
+  localStorage.setItem(REMINDERS_FIRED_KEY, JSON.stringify([...set]));
+}
+
+function checkReminders() {
+  const recordatorios = db.getRecordatorios();
+  if (!recordatorios.length) return;
+
+  const now = new Date();
+  const today = db.getLocalDate(now);
+  const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const dow = now.getDay(); // 0=Dom .. 6=Sab
+
+  const fired = getFiredSet();
+  let changed = false;
+
+  for (const r of recordatorios) {
+    if (!r.activo) continue;
+    if (r.hora !== hhmm) continue;
+
+    let matches = false;
+    if (r.tipo === 'diario') matches = true;
+    else if (r.tipo === 'unico') matches = r.fecha === today;
+    else if (r.tipo === 'semanal') matches = Array.isArray(r.dias) && r.dias.includes(dow);
+    if (!matches) continue;
+
+    const key = `${r.id}_${today}`;
+    if (fired.has(key)) continue;
+
+    fired.add(key);
+    changed = true;
+    fireReminder(r);
+  }
+
+  if (changed) saveFiredSet(fired);
+}
+
+function fireReminder(r) {
+  showAlarm({
+    id: r.id,
+    titulo: r.texto,
+    nota: r.nota || '',
+    prioridad: r.prioridad || 'normal',
+  });
+}
+
+// ── Alarma central (una a la vez; las demás hacen cola) ──
+
+let alarmActive = false;
+const alarmQueue = [];
+let alarmSoundTimer = null;
+
+function showAlarm(data) {
+  if (alarmActive) { alarmQueue.push(data); return; }
+  alarmActive = true;
+
+  const alta = data.prioridad === 'alta';
+  const overlay = document.createElement('div');
+  overlay.className = 'alarm-overlay';
+  overlay.innerHTML = `
+    <div class="alarm-card ${alta ? 'alarm-card--alta' : ''}">
+      <div class="alarm-icon">⏰</div>
+      <div class="alarm-label">Recordatorio${alta ? ' · Prioridad alta' : ''}</div>
+      <div class="alarm-title"></div>
+      <div class="alarm-note"></div>
+      <div class="alarm-actions">
+        <button class="btn btn-ghost btn-lg" data-alarm="snooze">😴 Posponer 10 min</button>
+        <button class="btn btn-primary btn-lg" data-alarm="dismiss">✓ Entendido</button>
+      </div>
+    </div>
+  `;
+  // textContent evita inyección de HTML desde el contenido del recordatorio
+  overlay.querySelector('.alarm-title').textContent = data.titulo || 'Recordatorio';
+  const noteEl = overlay.querySelector('.alarm-note');
+  if (data.nota) noteEl.textContent = data.nota; else noteEl.style.display = 'none';
+
+  const close = () => {
+    if (alarmSoundTimer) { clearInterval(alarmSoundTimer); alarmSoundTimer = null; }
+    overlay.style.animation = 'alarmFadeIn 0.2s ease reverse forwards';
+    setTimeout(() => {
+      overlay.remove();
+      alarmActive = false;
+      const next = alarmQueue.shift();
+      if (next) showAlarm(next);
+    }, 200);
+  };
+
+  overlay.querySelector('[data-alarm="dismiss"]').addEventListener('click', close);
+  overlay.querySelector('[data-alarm="snooze"]').addEventListener('click', () => {
+    snoozeReminder(data);
+    window.showToast('😴 Pospuesto 10 minutos', 'info');
+    close();
+  });
+
+  document.body.appendChild(overlay);
+
+  // Suena como alarma: repite cada 3s hasta que se cierre
+  playSound('reminder', false);
+  alarmSoundTimer = setInterval(() => playSound('reminder', false), 3000);
+}
+
+// ── Posponer (snooze) — local al dispositivo que pospuso ──
+
+const REMINDERS_SNOOZE_KEY = 'carapungo_recordatorios_snooze';
+
+function getSnoozes() {
+  try { return JSON.parse(localStorage.getItem(REMINDERS_SNOOZE_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function saveSnoozes(list) {
+  localStorage.setItem(REMINDERS_SNOOZE_KEY, JSON.stringify(list));
+}
+
+function snoozeReminder(data) {
+  const list = getSnoozes();
+  list.push({
+    id: data.id,
+    titulo: data.titulo,
+    nota: data.nota || '',
+    prioridad: data.prioridad || 'normal',
+    fireAt: Date.now() + 10 * 60 * 1000, // 10 minutos
+  });
+  saveSnoozes(list);
+}
+
+function checkSnoozes() {
+  const list = getSnoozes();
+  if (!list.length) return;
+  const now = Date.now();
+  const due = list.filter(s => s.fireAt <= now);
+  if (!due.length) return;
+  saveSnoozes(list.filter(s => s.fireAt > now));
+  due.forEach(s => showAlarm(s));
+}
+
+function setupReminderChecker() {
+  checkReminders();
+  checkSnoozes();
+  setInterval(() => { checkReminders(); checkSnoozes(); }, 20000); // cada 20s
+}
+
+// ========================================
 // Payment modal handlers
 // ========================================
 
@@ -407,6 +571,9 @@ function init() {
   db.on('cocina-updated', () => playSound('update-order', true));  // Desktop only
   db.on('cuenta-cerrada', () => playSound('payment', false));      // All devices
   db.on('cuenta-cancelada', () => playSound('cancel', true));      // Desktop only
+
+  // ⏰ Recordatorios: disparador global de avisos programados
+  setupReminderChecker();
 
   // Update permissions on resize (detects desktop view on mobile)
   window.addEventListener('resize', checkPermissions);

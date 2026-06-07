@@ -5016,5 +5016,439 @@ input:checked+.toggle-slider:before {
   100% { transform: scale(1); }
 }
 
+/* ========================================
+   ⏰ Recordatorios
+   ======================================== */
+
+.recordatorios-layout {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .recordatorios-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rec-form-card {
+  padding: 24px;
+}
+
+.rec-form-card h3 {
+  margin: 0 0 18px;
+  font-size: 18px;
+}
+
+/* Selector de tipo de repetición */
+.rec-tipo-group {
+  display: flex;
+  gap: 6px;
+  background: var(--bg-tertiary);
+  padding: 5px;
+  border-radius: var(--radius-lg);
+}
+
+.rec-tipo-btn {
+  flex: 1;
+  padding: 9px 6px;
+  border: none;
+  border-radius: calc(var(--radius-lg) - 3px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--transition-fast);
+}
+
+.rec-tipo-btn:hover {
+  color: var(--text-primary);
+}
+
+.rec-tipo-btn.active {
+  background: linear-gradient(135deg, var(--accent-pink), var(--accent-coral));
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(217, 70, 239, 0.3);
+}
+
+/* Chips de días de la semana */
+.rec-dias {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rec-dia-chip {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--transition-fast);
+}
+
+.rec-dia-chip:hover {
+  border-color: var(--accent-pink);
+  color: var(--text-primary);
+}
+
+.rec-dia-chip.active {
+  background: linear-gradient(135deg, var(--accent-pink), var(--accent-coral));
+  color: #fff;
+  border-color: transparent;
+}
+
+/* Lista */
+.rec-list-card {
+  padding: 20px;
+}
+
+.rec-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.rec-list-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.rec-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+}
+
+.rec-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+.rec-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.rec-item.inactivo,
+.rec-item.vencido {
+  opacity: 0.5;
+}
+
+.rec-item-hora {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--accent-pink);
+  min-width: 62px;
+  text-align: center;
+}
+
+.rec-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.rec-item-texto {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.rec-item-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+.rec-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  margin-left: 6px;
+}
+
+.rec-badge.vencido {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.rec-badge.pausado {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.rec-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.rec-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card);
+  cursor: pointer;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.rec-btn:hover {
+  background: var(--bg-card-hover);
+  transform: translateY(-1px);
+}
+
+.rec-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 48px 0;
+}
+
+.rec-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.rec-list-card {
+  max-width: 760px;
+}
+
+.rec-item-nota {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  word-break: break-word;
+}
+
+/* Indicador de prioridad (barra lateral del item) */
+.rec-item {
+  border-left: 3px solid transparent;
+}
+.rec-item.prioridad-alta { border-left-color: var(--danger); }
+.rec-item.prioridad-normal { border-left-color: var(--accent-pink); }
+.rec-item.prioridad-baja { border-left-color: var(--text-muted); }
+
+.rec-badge.alta {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* ========================================
+   ⏰ Modal de recordatorio (crear / editar)
+   ======================================== */
+
+.rec-modal {
+  width: min(440px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.rec-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.rec-modal-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.rec-modal-actions .btn {
+  flex: 1;
+}
+
+/* Selector de hora tipo rueda */
+.wheel-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  height: 220px;
+  overflow: hidden;
+}
+
+.wheel-highlight {
+  position: absolute;
+  top: 88px;
+  left: 16px;
+  right: 16px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 242, 254, 0.08);
+  border: 1px solid var(--yogu-cyan);
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.2);
+  pointer-events: none;
+}
+
+.wheel-col {
+  height: 220px;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  padding-block: 88px; /* 2 filas arriba y abajo para poder centrar */
+  text-align: center;
+  scrollbar-width: none;
+}
+
+.wheel-col::-webkit-scrollbar {
+  display: none;
+}
+
+.wheel-item {
+  height: 44px;
+  line-height: 44px;
+  min-width: 54px;
+  scroll-snap-align: center;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.wheel-item.selected {
+  color: #fff;
+  font-weight: 800;
+  font-size: 26px;
+  transform: scale(1.05);
+}
+
+.wheel-sep {
+  font-size: 26px;
+  font-weight: 800;
+  color: #fff;
+  z-index: 1;
+}
+
+/* ========================================
+   ⏰ Alarma central (al dispararse)
+   ======================================== */
+
+.alarm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  background: rgba(8, 8, 16, 0.75);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: alarmFadeIn 0.25s ease;
+}
+
+.alarm-card {
+  width: min(440px, 100%);
+  background: linear-gradient(160deg, var(--bg-card), var(--bg-secondary));
+  border: 1px solid var(--accent-pink);
+  border-radius: var(--radius-xl);
+  padding: 36px 28px;
+  text-align: center;
+  box-shadow: var(--shadow-lg), 0 0 50px var(--accent-pink-glow);
+  animation: alarmPop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.alarm-card--alta {
+  border-color: var(--danger);
+  box-shadow: var(--shadow-lg), 0 0 50px rgba(248, 113, 113, 0.4);
+}
+
+.alarm-icon {
+  font-size: 60px;
+  animation: reminderBell 1s ease infinite;
+}
+
+.alarm-label {
+  margin-top: 8px;
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent-pink);
+  font-weight: 700;
+}
+
+.alarm-card--alta .alarm-label {
+  color: var(--danger);
+}
+
+.alarm-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: #fff;
+  margin: 10px 0 6px;
+  word-break: break-word;
+}
+
+.alarm-note {
+  font-size: 15px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  word-break: break-word;
+}
+
+.alarm-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.alarm-actions .btn {
+  flex: 1;
+}
+
+@keyframes alarmFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes alarmPop {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes reminderBell {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(12deg); }
+  75% { transform: rotate(-12deg); }
+}
+
 
 
