@@ -6,6 +6,17 @@
 import * as db from '../db.js';
 import { formatCurrency } from '../main.js';
 
+// --- Estado: Archivar y Limpiar Historial ---
+let purgeStartDate = '';
+let purgeEndDate = '';
+let purgePreview = null;   // { ventas, cuentas, gastos, jornadas }
+let purgeExported = false; // debe exportarse antes de poder borrar
+let purgeLoading = false;
+
+function getYesterdayStr() {
+  return db.getLocalDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
+}
+
 export function render() {
   const cierres = db.getCierres().slice().reverse();
 
@@ -87,6 +98,31 @@ export function render() {
       </div>
     `}
 
+    <!-- Archivar y Limpiar Historial -->
+    <div class="card" style="margin-top: 24px; padding: 24px;">
+      <h3 style="margin:0 0 4px 0; font-size: 18px;">🗄️ Archivar y Limpiar Historial</h3>
+      <p style="color: var(--text-muted); font-size: 13px; margin: 0 0 16px 0;">
+        Exporta a Excel un rango de fechas y bórralo permanentemente del sistema para mantenerlo liviano.
+        Nunca incluye el día de hoy ni la jornada abierta.
+      </p>
+
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)) auto; gap:12px; align-items:end;">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Desde</label>
+          <input type="date" id="purge-start-date" class="form-input" value="${purgeStartDate}" max="${getYesterdayStr()}" />
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Hasta</label>
+          <input type="date" id="purge-end-date" class="form-input" value="${purgeEndDate}" max="${getYesterdayStr()}" />
+        </div>
+        <button class="btn btn-ghost" id="btn-purge-preview" ${purgeLoading ? 'disabled' : ''}>
+          ${purgeLoading ? '⏳ Cargando...' : '🔍 Vista previa'}
+        </button>
+      </div>
+
+      ${purgePreview ? renderPurgePreview() : ''}
+    </div>
+
     <!-- Detail modal -->
     <div id="detail-modal" class="modal-overlay" style="display:none;">
       <div class="modal" style="max-width: 560px;">
@@ -96,6 +132,57 @@ export function render() {
         </div>
         <div id="detail-content"></div>
       </div>
+    </div>
+  `;
+}
+
+function renderPurgePreview() {
+  const p = purgePreview;
+  const total = p.ventas.length + p.cuentas.length + p.gastos.length + p.jornadas.length;
+
+  if (total === 0) {
+    return `
+      <div style="margin-top:16px; padding:16px; text-align:center; color: var(--text-muted); background: rgba(0,0,0,0.15); border-radius: var(--radius-sm);">
+        No hay registros cerrados en ese rango de fechas.
+      </div>
+    `;
+  }
+
+  return `
+    <div style="margin-top:16px; padding:16px; background: rgba(0,0,0,0.15); border-radius: var(--radius-sm);">
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(110px,1fr)); gap:12px; text-align:center; margin-bottom:16px;">
+        <div>
+          <div style="font-size:22px; font-weight:800; color: var(--accent-pink);">${p.ventas.length}</div>
+          <div style="font-size:11px; color: var(--text-muted); text-transform:uppercase; letter-spacing: 0.5px;">Ventas</div>
+        </div>
+        <div>
+          <div style="font-size:22px; font-weight:800; color: var(--accent-mint);">${p.cuentas.length}</div>
+          <div style="font-size:11px; color: var(--text-muted); text-transform:uppercase; letter-spacing: 0.5px;">Cuentas</div>
+        </div>
+        <div>
+          <div style="font-size:22px; font-weight:800; color: var(--accent-blue);">${p.jornadas.length}</div>
+          <div style="font-size:11px; color: var(--text-muted); text-transform:uppercase; letter-spacing: 0.5px;">Cierres</div>
+        </div>
+        <div>
+          <div style="font-size:22px; font-weight:800; color: var(--danger);">${p.gastos.length}</div>
+          <div style="font-size:11px; color: var(--text-muted); text-transform:uppercase; letter-spacing: 0.5px;">Gastos</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        <button class="btn btn-secondary" id="btn-purge-export" style="flex:1; min-width:200px;" ${purgeLoading ? 'disabled' : ''}>
+          📤 Exportar a Excel
+        </button>
+        <button class="btn btn-danger" id="btn-purge-delete" style="flex:1; min-width:200px;"
+          ${!purgeExported || purgeLoading ? 'disabled' : ''}
+          title="${!purgeExported ? 'Primero exporta el respaldo a Excel' : ''}">
+          🗑️ Eliminar Permanentemente
+        </button>
+      </div>
+      ${purgeExported ? `
+        <div style="margin-top:10px; font-size:12px; color: var(--success); text-align:center;">
+          ✅ Respaldo exportado — ya puedes eliminar estos registros.
+        </div>
+      ` : ''}
     </div>
   `;
 }
@@ -124,6 +211,16 @@ export function init() {
   // Refresh when new cierres arrive from Firestore
   db.on('apertura-changed', rerender);
   db.on('cierres-changed', rerender);
+
+  // Archivar y Limpiar Historial
+  const btnPreview = document.getElementById('btn-purge-preview');
+  if (btnPreview) btnPreview.addEventListener('click', handlePurgePreview);
+
+  const btnExport = document.getElementById('btn-purge-export');
+  if (btnExport) btnExport.addEventListener('click', handlePurgeExport);
+
+  const btnDelete = document.getElementById('btn-purge-delete');
+  if (btnDelete) btnDelete.addEventListener('click', handlePurgeDelete);
 }
 
 function rerender() {
@@ -134,13 +231,26 @@ function rerender() {
   }
 }
 
-function showDetail(dateStr) {
-  const sales = db.getSalesByDate(dateStr);
+async function showDetail(dateStr) {
+  const contentEl = document.getElementById('detail-content');
+  document.getElementById('detail-modal').style.display = 'flex';
+  contentEl.innerHTML = `<p style="text-align:center; padding: 32px; color: var(--text-muted);">Cargando...</p>`;
+
+  // Se consulta directo a Firestore (no el caché local, que ahora está
+  // acotado a los últimos días) para que el detalle de cierres viejos
+  // siga siendo correcto sin importar cuánto historial se haya limpiado.
+  let sales;
+  try {
+    sales = await db.getSalesByDateFromCloud(dateStr);
+  } catch (err) {
+    console.error(err);
+    contentEl.innerHTML = `<p style="text-align:center; padding: 32px; color: var(--danger);">Error al cargar el detalle.</p>`;
+    return;
+  }
+
   const cierre = db.getCierreByDate(dateStr);
   const summary = db.calcDaySummary(sales);
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
-  const contentEl = document.getElementById('detail-content');
 
   // Agrupar ventas por producto
   const productSummary = {};
@@ -194,8 +304,128 @@ function showDetail(dateStr) {
       `).join('') : '<p style="color: var(--text-muted); text-align: center; padding: 16px;">Sin ventas registradas</p>'}
     </div>
   `;
-
-  document.getElementById('detail-modal').style.display = 'flex';
 }
 
-export function cleanup() {}
+// --- Archivar y Limpiar Historial ---
+
+async function handlePurgePreview() {
+  const startInput = document.getElementById('purge-start-date');
+  const endInput = document.getElementById('purge-end-date');
+  const start = startInput.value;
+  const end = endInput.value;
+
+  if (!start || !end) {
+    window.showToast('❌ Elige fecha de inicio y fin', 'error');
+    return;
+  }
+  if (start > end) {
+    window.showToast('❌ La fecha de inicio no puede ser posterior a la de fin', 'error');
+    return;
+  }
+
+  purgeStartDate = start;
+  purgeEndDate = end;
+  purgeExported = false;
+  purgePreview = null;
+  purgeLoading = true;
+  rerender();
+
+  try {
+    purgePreview = await db.getHistoricalRangeData(start, end);
+  } catch (err) {
+    console.error(err);
+    window.showToast('❌ Error al consultar el historial', 'error');
+  } finally {
+    purgeLoading = false;
+    rerender();
+  }
+}
+
+async function handlePurgeExport() {
+  if (!purgePreview) return;
+
+  try {
+    const XLSX = await import('xlsx'); // carga bajo demanda: no infla el bundle principal
+
+    const ventasRows = purgePreview.ventas.map(v => ({
+      Fecha: v.fecha, Hora: v.hora, Producto: v.producto_nombre, Precio: v.precio,
+      'Método de Pago': v.metodo_pago, Usuario: v.usuario, 'ID Cuenta': v.cuenta_id || ''
+    }));
+    const cuentasRows = purgePreview.cuentas.map(c => ({
+      Numero: c.numero, Mesa: c.mesa || '', Estado: c.estado, Items: c.items?.length || 0,
+      Total: c.total, 'Método de Pago': c.metodo_pago || '',
+      'Fecha Apertura': c.fecha_apertura, 'Hora Apertura': c.hora_apertura,
+      'Fecha Cierre': c.fecha_cierre || '', 'Hora Cierre': c.hora_cierre || ''
+    }));
+    const cierresRows = purgePreview.jornadas.map(j => ({
+      Fecha: j.fecha, 'Hora Apertura': j.hora_apertura, 'Hora Cierre': j.hora_cierre,
+      'Efectivo Inicial': j.efectivo_inicial,
+      'Total Efectivo': j.cierre?.total_efectivo_sistema, 'Total Tarjeta': j.cierre?.total_tarjeta,
+      'Total Transferencia': j.cierre?.total_transferencia, 'Total Gastos': j.cierre?.total_gastos,
+      'Total Día': j.cierre?.total_dia, 'Efectivo Contado': j.cierre?.efectivo_real,
+      Diferencia: j.cierre?.diferencia
+    }));
+    const gastosRows = purgePreview.gastos.map(g => ({
+      Fecha: g.fecha, Hora: g.hora, Descripción: g.descripcion, Categoría: g.categoria, Monto: g.monto
+    }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ventasRows), 'Ventas');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cuentasRows), 'Cuentas');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cierresRows), 'Cierres de Caja');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(gastosRows), 'Gastos');
+
+    XLSX.writeFile(wb, `Historial_${purgeStartDate}_a_${purgeEndDate}.xlsx`);
+
+    purgeExported = true;
+    window.showToast('📤 Respaldo exportado correctamente', 'success');
+    rerender();
+  } catch (err) {
+    console.error(err);
+    window.showToast('❌ No se pudo generar el Excel', 'error');
+  }
+}
+
+async function handlePurgeDelete() {
+  if (!purgePreview || !purgeExported) return;
+
+  const p = purgePreview;
+  const total = p.ventas.length + p.cuentas.length + p.gastos.length + p.jornadas.length;
+
+  const confirmed = await window.showConfirm({
+    icon: '🗑️',
+    title: '¿Eliminar historial permanentemente?',
+    message: `Se borrarán <b>${total} registros</b> del ${purgeStartDate} al ${purgeEndDate} de forma <b>irreversible</b>. Ya exportaste el respaldo en Excel.`,
+    details: `<div style="text-align:center; padding: 10px; background: rgba(0,0,0,0.05); border-radius: 8px;">${p.ventas.length} ventas · ${p.cuentas.length} cuentas · ${p.jornadas.length} cierres · ${p.gastos.length} gastos</div>`,
+    confirmText: '🗑️ Sí, eliminar permanentemente',
+    confirmClass: 'btn-danger'
+  });
+
+  if (!confirmed) return;
+
+  purgeLoading = true;
+  rerender();
+
+  try {
+    const result = await db.purgeHistoricalRange(purgeStartDate, purgeEndDate);
+    window.showToast(`🧹 Historial eliminado: ${result.ventas} ventas, ${result.cuentas} cuentas, ${result.jornadas} cierres, ${result.gastos} gastos`, 'success');
+    purgePreview = null;
+    purgeExported = false;
+    purgeStartDate = '';
+    purgeEndDate = '';
+  } catch (err) {
+    console.error(err);
+    window.showToast('❌ Error al eliminar el historial. Revisa la consola.', 'error');
+  } finally {
+    purgeLoading = false;
+    rerender();
+  }
+}
+
+export function cleanup() {
+  purgeStartDate = '';
+  purgeEndDate = '';
+  purgePreview = null;
+  purgeExported = false;
+  purgeLoading = false;
+}

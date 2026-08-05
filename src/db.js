@@ -1,7 +1,7 @@
 import { db as firestore } from './firebase.js';
-import { 
-  collection, doc, onSnapshot, setDoc, addDoc, updateDoc, 
-  query, where, orderBy, serverTimestamp, getDocs, limit, deleteDoc
+import {
+  collection, doc, onSnapshot, setDoc, addDoc, updateDoc,
+  query, where, orderBy, serverTimestamp, getDocs, limit, deleteDoc, writeBatch
 } from "firebase/firestore";
 
 // ============================================================
@@ -44,6 +44,22 @@ const DB_KEYS = {
 };
 
 const DB_VERSION = 1;
+
+// ============================================================
+// ⏱️ Ventana de sincronización en tiempo real
+// Las colecciones operativas de alta frecuencia (cuentas, gastos, cocina_kds)
+// solo se escuchan en vivo dentro de esta ventana reciente. Nada en la UI
+// actual necesita historial más viejo que la jornada del día (cerrarDia()
+// ya cancela cualquier cuenta que quede abierta), así que 7 días es holgado
+// y evita que el navegador reprocese años de historial en cada evento.
+// El historial más viejo se sigue pudiendo exportar/consultar bajo demanda
+// vía consultas directas a Firestore (ver getHistoricalRangeData).
+// ============================================================
+const SYNC_WINDOW_DAYS = 7;
+
+function getSyncCutoff() {
+  return Date.now() - SYNC_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+}
 
 // Inyectar banner visual si estamos en modo prueba
 if (IS_TEST_MODE && typeof document !== 'undefined') {
@@ -395,9 +411,9 @@ export function startCloudSync() {
     emit('apertura-changed', getAperturaHoy());
   });
 
-  // Sync Cuentas
+  // Sync Cuentas (acotado a los últimos SYNC_WINDOW_DAYS días — ver nota junto a getSyncCutoff)
   console.log(`📡 Subscribing to Cuentas onSnapshot [${col('cuentas')}]...`);
-  onSnapshot(collection(firestore, col('cuentas')), (snapshot) => {
+  onSnapshot(query(collection(firestore, col('cuentas')), where('timestamp_apertura', '>=', getSyncCutoff()), orderBy('timestamp_apertura', 'desc')), (snapshot) => {
     console.log(`🔄 Firestore Sync: Received ${snapshot.docs.length} cuentas (Source: ${snapshot.metadata.hasPendingWrites ? 'Local' : 'Server'})`);
     shadowStore.cuentas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     saveCollection(DB_KEYS.CUENTAS, shadowStore.cuentas);
@@ -413,8 +429,8 @@ export function startCloudSync() {
     console.error('❌ Firestore Cuentas Sync Error:', error);
   });
 
-  // Sync Cocina (KDS)
-  onSnapshot(query(collection(firestore, col('cocina_kds')), orderBy('timestamp', 'asc')), (snapshot) => {
+  // Sync Cocina (KDS) — acotado a los últimos SYNC_WINDOW_DAYS días
+  onSnapshot(query(collection(firestore, col('cocina_kds')), where('timestamp', '>=', getSyncCutoff()), orderBy('timestamp', 'asc')), (snapshot) => {
     shadowStore.cocina = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     saveCollection(DB_KEYS.COCINA, shadowStore.cocina);
     emit('cocina-sync', shadowStore.cocina);
@@ -431,8 +447,8 @@ export function startCloudSync() {
     emit('sales-changed', shadowStore.ventas);
   });
 
-  // Sync Gastos
-  onSnapshot(collection(firestore, col('gastos')), (snapshot) => {
+  // Sync Gastos (acotado a los últimos SYNC_WINDOW_DAYS días)
+  onSnapshot(query(collection(firestore, col('gastos')), where('timestamp', '>=', getSyncCutoff()), orderBy('timestamp', 'desc')), (snapshot) => {
     shadowStore.gastos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     saveCollection(DB_KEYS.GASTOS, shadowStore.gastos);
     emit('gastos-changed', shadowStore.gastos);
@@ -1899,7 +1915,7 @@ export function getGastosSummary() {
  * @param {string} endDate - YYYY-MM-DD
  */
 export async function getGlobalSales(startDate = null, endDate = null) {
-  const ventasRef = collection(firestore, 'ventas');
+  const ventasRef = collection(firestore, col('ventas'));
   let q;
   
   if (startDate && endDate) {
@@ -1922,7 +1938,7 @@ export async function getGlobalSales(startDate = null, endDate = null) {
  * Fetch expenses from Firestore within a date range
  */
 export async function getGlobalGastos(startDate = null, endDate = null) {
-  const gastosRef = collection(firestore, 'gastos');
+  const gastosRef = collection(firestore, col('gastos'));
   let q;
   
   if (startDate && endDate) {
@@ -1938,6 +1954,124 @@ export async function getGlobalGastos(startDate = null, endDate = null) {
 
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => doc.data());
+}
+
+/**
+ * Trae las ventas de UNA fecha específica directamente desde Firestore
+ * (no del caché local). La usa Historial > "Ver detalle": como el caché de
+ * `ventas` ahora está acotado (ver SYNC_WINDOW_DAYS y el limit(500) del
+ * onSnapshot), un cierre viejo podía quedar sin detalle disponible. Esta
+ * consulta puntual a la nube evita ese problema sin importar cuánto se haya
+ * limpiado el caché local.
+ */
+export async function getSalesByDateFromCloud(dateStr) {
+  const snapshot = await getDocs(query(collection(firestore, col('ventas')), where('fecha', '==', dateStr)));
+  return snapshot.docs.map(d => d.data());
+}
+
+// ========================================
+// 🗄️ Archivar y Limpiar Historial (export + purga por rango de fechas)
+// ========================================
+
+// Trae documentos de una colección filtrados por un campo de fecha
+// (YYYY-MM-DD) dentro de [startDate, endDate]. Por seguridad, NUNCA incluye
+// el día de hoy ni fechas futuras, sin importar el rango pedido.
+async function fetchClosedByDateRange(collectionName, dateField, startDate, endDate) {
+  const today = getLocalDate();
+  const safeEnd = endDate >= today ? today : endDate;
+  const q = query(
+    collection(firestore, collectionName),
+    where(dateField, '>=', startDate),
+    where(dateField, '<=', safeEnd),
+    orderBy(dateField)
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs
+    .map(d => ({ ...d.data(), id: d.id })) // id del documento manda, por si acaso difiere del campo interno
+    .filter(item => item[dateField] < today); // defensa extra: jamás incluir hoy
+}
+
+// Borra documentos por id en lotes de máx. 500 (límite de Firestore por batch).
+async function batchDeleteByIds(collectionName, ids) {
+  if (!ids.length) return;
+  const CHUNK = 500;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const batch = writeBatch(firestore);
+    ids.slice(i, i + CHUNK).forEach(id => batch.delete(doc(firestore, collectionName, id)));
+    await batch.commit();
+  }
+}
+
+/**
+ * Trae desde Firestore (no desde el caché local) todo el historial dentro
+ * de [startDate, endDate] (YYYY-MM-DD, inclusive): ventas, cuentas ya
+ * cerradas/canceladas, gastos y jornadas ya cerradas. Se usa tanto para la
+ * vista previa como para armar el Excel de respaldo antes de purgar.
+ * Excluye siempre cuentas 'abierta' y jornadas no 'cerrado', aunque su
+ * fecha caiga dentro del rango elegido.
+ */
+export async function getHistoricalRangeData(startDate, endDate) {
+  const [ventas, cuentasRaw, gastos, jornadasRaw] = await Promise.all([
+    fetchClosedByDateRange(col('ventas'), 'fecha', startDate, endDate),
+    fetchClosedByDateRange(col('cuentas'), 'fecha_apertura', startDate, endDate),
+    fetchClosedByDateRange(col('gastos'), 'fecha', startDate, endDate),
+    fetchClosedByDateRange(col('jornadas'), 'fecha', startDate, endDate),
+  ]);
+
+  const cuentas = cuentasRaw.filter(c => c.estado !== 'abierta');
+  const jornadas = jornadasRaw.filter(j => j.estado === 'cerrado');
+
+  return { ventas, cuentas, gastos, jornadas };
+}
+
+/**
+ * Borra PERMANENTEMENTE de Firestore (y del caché local) todo el historial
+ * dentro de [startDate, endDate]: ventas, cuentas, gastos, jornadas y
+ * pedidos de cocina (cocina_kds — dato operativo transitorio, no se incluye
+ * en el Excel de respaldo). Excluye siempre: hoy, fechas futuras, la
+ * jornada actualmente abierta y cualquier cuenta con estado 'abierta'.
+ * Los onSnapshot ya activos actualizan solos a todos los dispositivos
+ * conectados apenas Firestore refleja el borrado — no hace falta avisarles.
+ * Devuelve un resumen de cuántos registros se borraron por tipo.
+ */
+export async function purgeHistoricalRange(startDate, endDate) {
+  const { ventas, cuentas, gastos, jornadas } = await getHistoricalRangeData(startDate, endDate);
+  const cocina = await fetchClosedByDateRange(col('cocina_kds'), 'fecha', startDate, endDate);
+
+  await Promise.all([
+    batchDeleteByIds(col('ventas'), ventas.map(v => v.id)),
+    batchDeleteByIds(col('cuentas'), cuentas.map(c => c.id)),
+    batchDeleteByIds(col('gastos'), gastos.map(g => g.id)),
+    batchDeleteByIds(col('jornadas'), jornadas.map(j => j.id)),
+    batchDeleteByIds(col('cocina_kds'), cocina.map(p => p.id)),
+  ]);
+
+  // Reflejar la purga en el caché local de inmediato; los onSnapshot ya
+  // activos lo reconfirmarán solos apenas Firestore refleje el borrado.
+  const idsVentas = new Set(ventas.map(v => v.id));
+  const idsCuentas = new Set(cuentas.map(c => c.id));
+  const idsGastos = new Set(gastos.map(g => g.id));
+  const idsJornadas = new Set(jornadas.map(j => j.id));
+  const idsCocina = new Set(cocina.map(p => p.id));
+
+  saveCollection(DB_KEYS.VENTAS, getCollection(DB_KEYS.VENTAS).filter(v => !idsVentas.has(v.id)));
+  saveCollection(DB_KEYS.CUENTAS, getCollection(DB_KEYS.CUENTAS).filter(c => !idsCuentas.has(c.id)));
+  saveCollection(DB_KEYS.GASTOS, getCollection(DB_KEYS.GASTOS).filter(g => !idsGastos.has(g.id)));
+  saveCollection(DB_KEYS.APERTURAS, getCollection(DB_KEYS.APERTURAS).filter(j => !idsJornadas.has(j.id)));
+  saveCollection(DB_KEYS.COCINA, getCollection(DB_KEYS.COCINA).filter(p => !idsCocina.has(p.id)));
+
+  emit('sales-changed', getCollection(DB_KEYS.VENTAS));
+  emit('cuentas-changed', getCollection(DB_KEYS.CUENTAS));
+  emit('gastos-changed', getCollection(DB_KEYS.GASTOS));
+  emit('cierres-changed', getCierres());
+
+  return {
+    ventas: ventas.length,
+    cuentas: cuentas.length,
+    gastos: gastos.length,
+    jornadas: jornadas.length,
+    cocina: cocina.length,
+  };
 }
 
 // ========================================
